@@ -75,3 +75,11 @@ install(TARGETS DBMS_demo1
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(DBMS_demo1)
 endif()
+
+
+add_subdirectory(Common)
+add_subdirectory(Network)
+add_subdirectory(Index)
+add_subdirectory(Security)
+add_subdirectory(Storage)
+add_subdirectory(Records)
