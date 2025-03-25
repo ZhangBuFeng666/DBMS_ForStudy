@@ -1,0 +1,12 @@
+#ifndef CONSTRAINTS_GLOBAL_H
+#define CONSTRAINTS_GLOBAL_H
+
+#include <QtCore/qglobal.h>
+
+#if defined(CONSTRAINTS_LIBRARY)
+#define CONSTRAINTS_EXPORT Q_DECL_EXPORT
+#else
+#define CONSTRAINTS_EXPORT Q_DECL_IMPORT
+#endif
+
+#endif // CONSTRAINTS_GLOBAL_H
