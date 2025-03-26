@@ -21,6 +21,3 @@ private:
     Ui::Widget *ui;
 };
 #endif // WIDGET_H
-
-
-#include <iostream>
