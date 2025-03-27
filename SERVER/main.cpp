@@ -1,104 +1,206 @@
+// src/main.cpp
 #include <iostream>
-#include <fstream>
-#include <winsock2.h>
-#include <ws2tcpip.h> // for inet_pton
-#pragma comment(lib, "ws2_32.lib") // 链接 Winsock 库
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <unordered_map>
+#include "SocketManager.h"
+#include "DiffPlat.h"
+#include"Tools.h"
 
-const int CHUNK_SIZE = 1024; // 1KB
+using namespace net;
 
-// 发送消息头（长度）
-void send_header(SOCKET sock, uint32_t length) {
-    uint32_t net_length = htonl(length);
-    send(sock, reinterpret_cast<const char*>(&net_length), sizeof(net_length), 0);
-}
+class ConnectionManager {
+private:
+    std::mutex mutex_;
+    std::unordered_map<int, std::thread> threads;
+    std::unordered_map<int, DBSocket> DBSockets;
+    std::atomic<bool> running{ true };
 
-// 发送数据块
-void send_chunk(SOCKET sock, const char* data, size_t size) {
-    send_header(sock, size + 1);  // +1 用于消息类型字节
-    char type = 0x02;             // 数据类型标记
-    send(sock, &type, 1, 0);
-    send(sock, data, static_cast<int>(size), 0);
-}
-
-int main() {
-    // 初始化 Winsock
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "WSAStartup failed!" << std::endl;
-        return 1;
+public:
+    ~ConnectionManager() {
+        stop_all();
     }
 
-    // 创建 Socket
-    SOCKET server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (server_fd == INVALID_SOCKET) {
-        std::cerr << "Socket creation failed: " << WSAGetLastError() << std::endl;
-        WSACleanup();
-        return 1;
+    void add(int client_id, DBSocket&& sock, std::thread&& thread) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        DBSockets.emplace(client_id, std::move(sock));
+        threads.emplace(client_id, std::move(thread));
     }
 
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(12345);
-    inet_pton(AF_INET, "0.0.0.0", &addr.sin_addr);
-
-    // 绑定 & 监听
-    if (bind(server_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-        std::cerr << "Bind failed: " << WSAGetLastError() << std::endl;
-        closesocket(server_fd);
-        WSACleanup();
-        return 1;
-    }
-
-    if (listen(server_fd, 5) == SOCKET_ERROR) {
-        std::cerr << "Listen failed: " << WSAGetLastError() << std::endl;
-        closesocket(server_fd);
-        WSACleanup();
-        return 1;
-    }
-
-    std::cout << "Server listening on port 12345..." << std::endl;
-
-    while (true) {
-        // 接受客户端连接
-        SOCKET client_sock = accept(server_fd, nullptr, nullptr);
-        if (client_sock == INVALID_SOCKET) {
-            std::cerr << "Accept failed: " << WSAGetLastError() << std::endl;
-            continue;
+    void remove(int client_id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (DBSockets.count(client_id)) {
+            DBSockets.at(client_id).close();
+            DBSockets.erase(client_id);
         }
+        if (threads.count(client_id)) {
+            if (threads.at(client_id).joinable()) {
+                threads.at(client_id).detach();
+            }
+            threads.erase(client_id);
+        }
+    }
 
-        char buffer[1024];
+    void stop_all() {
+        running = false;
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& pair : DBSockets) {//pair[id, sock]
+            pair.second.close();
+        }
+        DBSockets.clear();
+        for (auto& pair : threads) {//pair[id, t]
+            if (pair.second.joinable()) pair.second.detach();
+        }
+        threads.clear();
+    }
 
-        // 接收客户端请求
-        recv(client_sock, buffer, 4, MSG_WAITALL);
-        uint32_t body_len = ntohl(*reinterpret_cast<uint32_t*>(buffer));
-        recv(client_sock, buffer, body_len, MSG_WAITALL);
+    bool is_running() const {
+        return running;
+    }
+};
 
-        if (buffer[0] == 0x01) { // 处理请求
-            std::string filename(buffer + 1, body_len - 1);
-            std::ifstream file(filename, std::ios::binary);
+void client_handler(DBSocket client_sock, int client_id, ConnectionManager& manager) {
+    try {
+        std::cout << "Client " << client_id << " connected\n";
 
-            if (!file) {
-                // 发送错误
-                send_header(client_sock, 1 + 12);
-                char msg[] = "\xFF File not found"; // 0xFF + 错误信息
-                send(client_sock, msg, sizeof(msg), 0);
+        // 设置非阻塞模式
+        client_sock.set_non_blocking(true);
+
+        while (manager.is_running()) {
+            // 接收数据
+            char buffer[1024];
+            int bytes_received = client_sock.recv(buffer, sizeof(buffer));
+
+            if (bytes_received > 0) {
+                // 处理数据
+                std::string message(buffer, bytes_received);
+                std::cout << "From client " << client_id << ": " << message << std::endl;
+
+                // 发送响应
+                std::string response = "Echo: " + message;
+                client_sock.send(response.c_str(), response.size());
+            }
+            else if (bytes_received == 0) {
+                // 连接关闭
+                break;
             }
             else {
-                char chunk[CHUNK_SIZE];
-                while (!file.eof()) {
-                    file.read(chunk, CHUNK_SIZE);
-                    send_chunk(client_sock, chunk, file.gcount());
-
-                    // 等待ACK
-                    char ack;
-                    recv(client_sock, &ack, 1, 0); // 简化ACK逻辑
+                // 非阻塞模式下的错误处理
+#ifdef _WIN32
+                if (WSAGetLastError() == WSAEWOULDBLOCK) {
+#else
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+#endif
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    continue;
+                }
+                break;
                 }
             }
         }
-        closesocket(client_sock);
+    catch (const std::exception& e) {
+        std::cerr << "Client " << client_id << " error: " << e.what() << std::endl;
     }
 
-    closesocket(server_fd);
-    WSACleanup();
-    return 0;
+    std::cout << "Client " << client_id << " disconnected\n";
+    manager.remove(client_id);
+    }
+
+
+int main() {;
+try {
+    platform::socket_lib_init();
+    ConnectionManager manager;
+
+    // 创建服务器DBSocket
+    DBSocket server_sock(DBSocket::Protocol::TCP);
+    server_sock.bind(12345);
+    server_sock.listen();
+
+    std::cout << "Server started on port 12345..." << std::endl;
+
+    int client_counter = 0;
+    //    while (manager.is_running()) {
+    //        try {
+    //            // 接受新连接
+    //            DBSocket client_sock = server_sock.accept();
+    //            int client_id = ++client_counter;
+
+    //            // 启动客户端线程
+    //            std::thread t([client_sock = std::move(client_sock), client_id, &manager]() mutable {
+    //                client_handler(std::move(client_sock), client_id, manager);
+    //                });
+
+    //            // 添加连接管理
+    //            manager.add(client_id, std::move(client_sock), std::move(t));
+    //        }
+    //        catch (const std::system_error& e) {
+    //            if (!manager.is_running()) break;
+    //            std::cerr << "Accept error: " << e.what() << std::endl;
+    //        }
+    //    }
+    //    return 0;
+    //}
+        // 改进后的主循环
+    while (manager.is_running()) {
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        int server_fd = server_sock.get_fd();
+        FD_SET(server_fd, &read_fds);
+
+        // 设置1秒超时兼顾响应性和CPU效率
+        timeval timeout{ 1, 0 };
+
+        // 使用select等待可读事件
+        int ready = select(server_fd + 1, &read_fds, nullptr, nullptr, &timeout);
+
+        if (ready < 0) {  // 错误处理
+            if (errno == EINTR) continue;  // 被信号中断
+            char buffer[256];  // 需要提供缓冲区
+            std::cerr << "select error: " << strerror_s(buffer,errno) << std::endl;
+            break;
+        }
+
+        if (ready == 0) {  // 超时
+            // 执行定期维护任务（例如清理超时连接）
+            //manager.cleanup_inactive();
+            continue;
+        }
+
+        if (FD_ISSET(server_fd, &read_fds)) {
+            // 批量接受连接的优化
+            const int MAX_ACCEPT_PER_LOOP = 100;
+            for (int i = 0; i < MAX_ACCEPT_PER_LOOP; ++i) {
+                try {
+                    DBSocket client_sock = server_sock.accept();
+                    int client_id = ++client_counter;
+
+                    // 创建线程并管理
+                    std::thread t([client_sock = std::move(client_sock),
+                        client_id, &manager]() mutable {
+                            client_handler(std::move(client_sock), client_id, manager);
+                        });
+                    manager.add(client_id, std::move(client_sock), std::move(t));
+                }
+                catch (const std::system_error& e) {
+                    if (e.code().value() == WSAEWOULDBLOCK ||
+                        e.code().value() == EWOULDBLOCK) {
+                        break;  // 无更多待接连接
+                    }
+                    std::cerr << "Accept error: " << e.what() << std::endl;
+                }
+            }
+        }
+
+        // 添加CPU让步避免忙等待
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+    catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
+        return 1;
+    }
+    platform::socket_lib_cleanup();
 }
