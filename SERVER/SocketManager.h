@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <winsock2.h>
 
-namespace net {
+namespace mySocket {
     /**
      * @brief 数据库Socket封装类，提供跨平台的TCP/UDP网络通信能力
      */

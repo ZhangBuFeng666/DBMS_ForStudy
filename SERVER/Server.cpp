@@ -104,38 +104,124 @@
 //}
 
 #include "Server.h"
-#include "DiffPlat.h"
-#include <thread>
 
-namespace net {
-    DBServer::DBServer(uint16_t port) : port_(port) {
-        platform::socket_lib_init();
+//namespace net {
+//    DBServer::DBServer(uint16_t port) : port_(port) {
+//        platform::socket_lib_init();
+//    }
+//
+//    DBServer::~DBServer() {
+//        stop();
+//        platform::socket_lib_cleanup();
+//    }
+//
+//    void DBServer::start(ClientHandler&& handler) {
+//        listen_sock_.bind(port_);
+//        listen_sock_.listen();
+//        running = true;
+//
+//        while (running) {
+//            try {
+//                auto client = listen_sock_.accept();
+//                std::thread(handler, std::move(client)).detach();
+//            }
+//            catch (const std::system_error& e) {
+//                if (!running) break;
+//                // 处理异常
+//            }
+//        }
+//    }
+//
+//    void DBServer::stop() noexcept {
+//        running = false;
+//        listen_sock_.close();
+//    }
+//}
+
+
+using namespace mySocket;
+using namespace std;
+
+namespace myServer {
+
+    void Server::add(int client_id, DBSocket&& sock, std::thread&& thread) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        DBSockets.emplace(client_id, std::move(sock));
+        threads.emplace(client_id, std::move(thread));
     }
 
-    DBServer::~DBServer() {
-        stop();
-        platform::socket_lib_cleanup();
+    void Server::stop_all() {
+        running = false;
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& pair : DBSockets) {//pair[id, sock]
+            pair.second.close();
+        }
+        DBSockets.clear();
+        for (auto& pair : threads) {//pair[id, t]
+            if (pair.second.joinable()) pair.second.detach();
+        }
+        threads.clear();
     }
-
-    void DBServer::start(ClientHandler&& handler) {
-        listen_sock_.bind(port_);
-        listen_sock_.listen();
-        running = true;
-
-        while (running) {
-            try {
-                auto client = listen_sock_.accept();
-                std::thread(handler, std::move(client)).detach();
+    void Server::remove(int client_id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (DBSockets.count(client_id)) {
+            DBSockets.at(client_id).close();
+            DBSockets.erase(client_id);
+        }
+        if (threads.count(client_id)) {
+            if (threads.at(client_id).joinable()) {
+                threads.at(client_id).detach();
             }
-            catch (const std::system_error& e) {
-                if (!running) break;
-                // 处理异常
-            }
+            threads.erase(client_id);
         }
     }
 
-    void DBServer::stop() noexcept {
-        running = false;
-        listen_sock_.close();
+    void client_handler(mySocket::DBSocket client_sock, int client_id, Server& my_server)
+    {
+        try {
+            cout << "Client " << client_id << " connected\n";
+
+            // 设置非阻塞模式
+            client_sock.set_non_blocking(true);
+
+            while (my_server.is_running()) {
+                // 接收数据
+                char buffer[1024];
+                int bytes_received = client_sock.recv(buffer, sizeof(buffer));
+
+                if (bytes_received > 0) {
+                    // 处理数据
+                    string message(buffer, bytes_received);
+                    cout << "From client " << client_id << ": " << message << endl;
+
+                    // 发送响应
+                    string response = "Echo: " + message;
+                    client_sock.send(response.c_str(), response.size());
+                }
+                else if (bytes_received == 0) {
+                    // 连接关闭
+                    break;
+                }
+                else {
+                    // 非阻塞模式下的错误处理
+#ifdef _WIN32
+                    if (WSAGetLastError() == WSAEWOULDBLOCK) {
+#else
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+#endif
+                        this_thread::sleep_for(chrono::milliseconds(100));
+                        continue;
+                    }
+                    break;
+                }
+            }
+        }
+        catch (const exception& e) {
+            cerr << "Client " << client_id << " error: " << e.what() << endl;
+        }
+
+        cout << "Client " << client_id << " disconnected\n";
+        my_server.remove(client_id);
+
     }
 }

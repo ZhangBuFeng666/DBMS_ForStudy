@@ -1,4 +1,10 @@
-﻿  main.cpp
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\main.cpp(74,32): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+﻿  DiffPlat.cpp
+  DiffPlat.h
+  SocketManager.cpp
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SocketManager.cpp(9,24): warning C4244: “=”: 从“SOCKET”转换到“int”，可能丢失数据
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SocketManager.cpp(74,27): warning C4244: “初始化”: 从“SOCKET”转换到“int”，可能丢失数据
+  main.cpp
+  正在生成代码...
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SocketManager.cpp(109,1): warning C4715: “mySocket::DBSocket::accept”: 不是所有的控件路径都返回值
 SERVER\x64\Debug\DiffPlat.obj : warning LNK4042: 对象被多次指定；已忽略多余的指定
   SERVER.vcxproj -> F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\x64\Debug\SERVER.exe

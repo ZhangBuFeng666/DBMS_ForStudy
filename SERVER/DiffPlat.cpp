@@ -1,7 +1,5 @@
 #include "DiffPlat.h"
 
-
-
 namespace platform {
     void socket_lib_init() {
 #ifdef _WIN32
