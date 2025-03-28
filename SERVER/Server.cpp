@@ -144,84 +144,99 @@ using namespace std;
 
 namespace myServer {
 
-    void Server::add(int client_id, DBSocket&& sock, std::thread&& thread) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        DBSockets.emplace(client_id, std::move(sock));
-        threads.emplace(client_id, std::move(thread));
+
+    void Server::add(int id, DBSocket&& sock, std::thread&& t) {
+        std::lock_guard<std::mutex> lk(mutex);
+        clients[id] = std::make_unique<ClientSession>(std::move(sock), std::move(t));
     }
 
+    //void Server::stop_all() {
+    //    running = false;
+    //    std::lock_guard<std::mutex> lock(mutex_);
+    //    for (auto& pair : DBSockets) {//pair[id, sock]
+    //        pair.second.close();
+    //    }
+    //    DBSockets.clear();
+    //    for (auto& pair : threads) {//pair[id, t]
+    //        if (pair.second.joinable()) pair.second.detach();
+    //    }
+    //    threads.clear();
+    //}
+    //void Server::remove(int client_id) {
+    //    std::lock_guard<std::mutex> lock(mutex_);
+    //    if (DBSockets.count(client_id)) {
+    //        DBSockets.at(client_id).close();
+    //        DBSockets.erase(client_id);
+    //    }
+    //    if (threads.count(client_id)) {
+    //        if (threads.at(client_id).joinable()) {
+    //            threads.at(client_id).detach();
+    //        }
+    //        threads.erase(client_id);
+    //    }
+    //}
+    // 关闭所有客户端连接并清理资源
     void Server::stop_all() {
-        running = false;
+        running = false;  // 通知全局停止
+
         std::lock_guard<std::mutex> lock(mutex_);
-        for (auto& pair : DBSockets) {//pair[id, sock]
-            pair.second.close();
+
+        // 分两步操作确保线程安全
+        for (auto& client : clients) {
+            if (client.second) {
+                client.second->close_socket();  // 强制关闭套接字以中断阻塞操作
+            }
         }
-        DBSockets.clear();
-        for (auto& pair : threads) {//pair[id, t]
-            if (pair.second.joinable()) pair.second.detach();
-        }
-        threads.clear();
+
+        clients.clear();  // unique_ptr 自动析构，触发 ClientSession 的析构函数
     }
+
+    // 移除指定客户端
     void Server::remove(int client_id) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (DBSockets.count(client_id)) {
-            DBSockets.at(client_id).close();
-            DBSockets.erase(client_id);
-        }
-        if (threads.count(client_id)) {
-            if (threads.at(client_id).joinable()) {
-                threads.at(client_id).detach();
-            }
-            threads.erase(client_id);
+
+        if (auto it = clients.find(client_id); it != clients.end()) {
+            it->second->close_socket();
+            clients_.erase(it);
         }
     }
 
-    void client_handler(mySocket::DBSocket client_sock, int client_id, Server& my_server)
-    {
-        try {
-            cout << "Client " << client_id << " connected\n";
+    void Server::main_controller()
+    {// Server端核心逻辑
+        DBSocket server_sock(Protocol::TCP);
+        server_sock.bind(12345);
+        server_sock.listen();
 
-            // 设置非阻塞模式
-            client_sock.set_non_blocking(true);
+        std::cout << "Server started on port 12345..." << std::endl;
 
-            while (my_server.is_running()) {
-                // 接收数据
-                char buffer[1024];
-                int bytes_received = client_sock.recv(buffer, sizeof(buffer));
+        // 使用epoll管理连接
+        EpollManager epoll;
+        epoll.add(server_sock.get_fd(), EPOLLIN);
 
-                if (bytes_received > 0) {
-                    // 处理数据
-                    string message(buffer, bytes_received);
-                    cout << "From client " << client_id << ": " << message << endl;
+        while (running) {
+            auto events = epoll.wait(100);  // 100ms超时
 
-                    // 发送响应
-                    string response = "Echo: " + message;
-                    client_sock.send(response.c_str(), response.size());
-                }
-                else if (bytes_received == 0) {
-                    // 连接关闭
-                    break;
+            for (auto& ev : events) {
+                if (ev.data.fd == server_sock.get_fd()) {
+                    // 接受新连接
+                    DBSocket client_sock = server_sock.accept();
+                    client_sock.set_non_blocking(true);  // 按需设置
+
+                    // 创建Session并托管
+                    auto session = std::make_unique<ClientSession>(
+                        std::move(client_sock),
+                        std::thread(&ClientSession::run, this)
+                    );
+
+                    std::lock_guard<std::mutex> lock(mutex);
+                    clients[next_id++] = std::move(session);
                 }
                 else {
-                    // 非阻塞模式下的错误处理
-#ifdef _WIN32
-                    if (WSAGetLastError() == WSAEWOULDBLOCK) {
-#else
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-#endif
-                        this_thread::sleep_for(chrono::milliseconds(100));
-                        continue;
-                    }
-                    break;
+                    // 处理已有连接I/O事件
                 }
+
             }
         }
-        catch (const exception& e) {
-            cerr << "Client " << client_id << " error: " << e.what() << endl;
-        }
-
-        cout << "Client " << client_id << " disconnected\n";
-        my_server.remove(client_id);
 
     }
 }

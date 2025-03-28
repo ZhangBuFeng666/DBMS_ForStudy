@@ -27,16 +27,20 @@
 #include <unordered_map>
 #include <thread>
 #include <iostream>
-#include "SocketManager.h"
-#include "DiffPlat.h"
+//#include "SocketManager.h"
+#include "Client.h"
 
 
 namespace myServer {
     class Server {
     private:
+
+        //std::mutex mtx_;
+
         std::mutex mutex_;
         std::unordered_map<int, std::thread> threads;
-        std::unordered_map<int, mySocket::DBSocket> DBSockets;
+        std::unordered_map<int, std::unique_ptr<ClientSession>> clients;
+        //std::unordered_map<int, mySocket::DBSocket> DBSockets;
         std::atomic<bool> running{ true };
 
     public:
@@ -44,7 +48,9 @@ namespace myServer {
             stop_all();
         }
 
-        void add(int client_id, mySocket::DBSocket&& sock, std::thread&& thread);
+        void main_controller();
+
+        void add(int id, DBSocket&& sock, std::thread&& t);
 
         void remove(int client_id);
 
@@ -55,6 +61,7 @@ namespace myServer {
         }
     };
 
-    void client_handler(mySocket::DBSocket client_sock, int client_id, Server& my_server);
+
+
 }
 #endif // NET_SERVER_CORE_H

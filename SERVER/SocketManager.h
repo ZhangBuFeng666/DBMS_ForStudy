@@ -27,6 +27,32 @@ namespace mySocket {
          */
         ~DBSocket();
 
+
+        DBSocket(DBSocket&& other) noexcept
+            : proto(other.proto),
+            sockfd(other.sockfd),
+            is_listening(other.is_listening) {
+            other.sockfd = -1;  // 原对象放弃描述符所有权
+        }
+
+        DBSocket& operator=(DBSocket&& other) noexcept {
+            if (this != &other) {
+                close();  // 关闭当前持有的socket
+                proto = other.proto;
+                sockfd = other.sockfd;
+                is_listening = other.is_listening;
+                other.sockfd = -1;
+            }
+            return *this;
+        }
+
+        // 禁用拷贝
+        DBSocket(const DBSocket&) = delete;
+        DBSocket& operator=(const DBSocket&) = delete;
+
+
+        bool is_open() const { return sockfd != -1; }        
+        
         /**
          * @brief 绑定Socket到指定端口
          * @param port 监听端口号（主机字节序）
@@ -90,7 +116,7 @@ namespace mySocket {
          */
         void close() noexcept;
 
-        int get_fd() const { return sockfd; } ///< 获取底层Socket文件描述符
+        int get_fd() const { return sockfd; } ///< 获取底层Socket文件描述符, 供epoll/kqueue使用
 
     private:
         int sockfd = -1;       ///< 底层Socket文件描述符

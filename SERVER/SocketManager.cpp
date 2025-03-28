@@ -43,16 +43,10 @@ namespace mySocket {
 
     void DBSocket::listen(int backlog) {
         if (::listen(sockfd, backlog) == -1) {
-#ifdef _WIN32
             throw std::system_error(WSAGetLastError(),
                 std::system_category(), "listen failed");
-#else
-            throw std::system_error(errno,
-                std::system_category(), "listen failed");
-#endif
         }
         is_listening = true;
-        set_non_blocking(true); // 设置为非阻塞模式
     }
 
     DBSocket DBSocket::accept() {
@@ -108,26 +102,50 @@ namespace mySocket {
         }
     }
 
+    DBSocket DBSocket::accept() {
+        if (!is_listening) {
+            throw std::logic_error("Socket is not in listening state");
+        }
+
+        // 轮询检查可读事件
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(sockfd, &readfds);
+
+        timeval timeout{ 0, 0 }; // 非阻塞立即返回
+        int ready = select(sockfd + 1, &readfds, nullptr, nullptr, &timeout);
+
+        if (ready > 0) {
+
+            sockaddr_in client_addr{};
+            int len = sizeof(client_addr);
+            int client_fd = ::accept(sockfd, (sockaddr*)&client_addr, &len);
+
+            if (client_fd == -1) { /* 错误处理 */ }
+
+            // 根据当前协议创建新DBSocket
+            DBSocket client_socket(proto);
+            client_socket.sockfd = client_fd;  // 需要添加sockfd的setter或友元访问
+
+            return client_socket;
+        }
+        else if (ready == 0) { // 无连接
+            throw std::system_error(WSAEWOULDBLOCK,
+                std::system_category(), "No pending connections");
+        }
+        else { // select错误
+            throw std::system_error(WSAGetLastError(),
+                std::system_category(), "select failed");
+        }
+    }
+
     void DBSocket::set_non_blocking(bool enable) {
-#ifdef _WIN32
         unsigned long mode = enable ? 1 : 0;
         if (ioctlsocket(sockfd, FIONBIO, &mode) != 0) {
             throw std::system_error(WSAGetLastError(),
                 std::system_category(), "ioctlsocket failed");
         }
-#else
-        int flags = fcntl(sockfd, F_GETFL, 0);
-        if (flags == -1) {
-            throw std::system_error(errno,
-                std::system_category(), "fcntl get failed");
-        }
 
-        flags = enable ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
-        if (fcntl(sockfd, F_SETFL, flags) == -1) {
-            throw std::system_error(errno,
-                std::system_category(), "fcntl set failed");
-        }
-#endif
     }
 
     void DBSocket::connect(const std::string& host, uint16_t port) {}
