@@ -116,10 +116,10 @@ namespace mySocket {
          */
         void close() noexcept;
 
-        int get_fd() const { return sockfd; } ///< 获取底层Socket文件描述符, 供epoll/kqueue使用
+        SOCKET get_fd() const { return sockfd; } ///< 获取底层Socket文件描述符, 供epoll/kqueue使用
 
     private:
-        int sockfd = -1;       ///< 底层Socket文件描述符
+        SOCKET sockfd = -1;       ///< 底层Socket文件描述符
         Protocol proto;        ///< 协议类型
         bool is_listening = false; ///< 是否处于监听模式
     };

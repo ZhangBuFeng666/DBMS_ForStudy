@@ -63,63 +63,10 @@ namespace mySocket {
         int ready = select(sockfd + 1, &readfds, nullptr, nullptr, &timeout);
 
         if (ready > 0) {
-            sockaddr_in client_addr{};
-            int len = sizeof(client_addr);
-            int client_fd = ::accept(sockfd,
-                (sockaddr*)&client_addr, &len);
-
-            if (client_fd == -1) {
-#ifdef _WIN32
-                throw std::system_error(WSAGetLastError(),
-                    std::system_category(), "accept failed");
-#else
-                throw std::system_error(errno,
-                    std::system_category(), "accept failed");
-#endif
-            }
-            if (client_fd == 0)
-                return DBSocket(Protocol::TCP);
-            else if (client_fd == 1)
-                return DBSocket(Protocol::UDP);
-        }
-        else if (ready == 0) { // 无连接
-#ifdef _WIN32
-            throw std::system_error(WSAEWOULDBLOCK,
-                std::system_category(), "No pending connections");
-#else
-            throw std::system_error(EWOULDBLOCK,
-                std::system_category(), "No pending connections");
-#endif
-        }
-        else { // select错误
-#ifdef _WIN32
-            throw std::system_error(WSAGetLastError(),
-                std::system_category(), "select failed");
-#else
-            throw std::system_error(errno,
-                std::system_category(), "select failed");
-#endif
-        }
-    }
-
-    DBSocket DBSocket::accept() {
-        if (!is_listening) {
-            throw std::logic_error("Socket is not in listening state");
-        }
-
-        // 轮询检查可读事件
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(sockfd, &readfds);
-
-        timeval timeout{ 0, 0 }; // 非阻塞立即返回
-        int ready = select(sockfd + 1, &readfds, nullptr, nullptr, &timeout);
-
-        if (ready > 0) {
 
             sockaddr_in client_addr{};
             int len = sizeof(client_addr);
-            int client_fd = ::accept(sockfd, (sockaddr*)&client_addr, &len);
+            SOCKET client_fd = ::accept(sockfd, (sockaddr*)&client_addr, &len);
 
             if (client_fd == -1) { /* 错误处理 */ }
 

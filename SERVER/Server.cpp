@@ -145,46 +145,21 @@ using namespace std;
 namespace myServer {
 
 
-    void Server::add(int id, DBSocket&& sock, std::thread&& t) {
-        std::lock_guard<std::mutex> lk(mutex);
-        clients[id] = std::make_unique<ClientSession>(std::move(sock), std::move(t));
+    void Server::add(int id, std::unique_ptr<ClientSession> client) {
+        std::lock_guard<std::mutex> lk(mutex_s);
+        clients[id] = std::move(client);
     }
 
-    //void Server::stop_all() {
-    //    running = false;
-    //    std::lock_guard<std::mutex> lock(mutex_);
-    //    for (auto& pair : DBSockets) {//pair[id, sock]
-    //        pair.second.close();
-    //    }
-    //    DBSockets.clear();
-    //    for (auto& pair : threads) {//pair[id, t]
-    //        if (pair.second.joinable()) pair.second.detach();
-    //    }
-    //    threads.clear();
-    //}
-    //void Server::remove(int client_id) {
-    //    std::lock_guard<std::mutex> lock(mutex_);
-    //    if (DBSockets.count(client_id)) {
-    //        DBSockets.at(client_id).close();
-    //        DBSockets.erase(client_id);
-    //    }
-    //    if (threads.count(client_id)) {
-    //        if (threads.at(client_id).joinable()) {
-    //            threads.at(client_id).detach();
-    //        }
-    //        threads.erase(client_id);
-    //    }
-    //}
     // 关闭所有客户端连接并清理资源
     void Server::stop_all() {
         running = false;  // 通知全局停止
 
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex);
 
         // 分两步操作确保线程安全
         for (auto& client : clients) {
             if (client.second) {
-                client.second->close_socket();  // 强制关闭套接字以中断阻塞操作
+                client.second->~ClientSession();  // 强制关闭套接字以中断阻塞操作
             }
         }
 
@@ -193,48 +168,60 @@ namespace myServer {
 
     // 移除指定客户端
     void Server::remove(int client_id) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_s);
 
         if (auto it = clients.find(client_id); it != clients.end()) {
-            it->second->close_socket();
-            clients_.erase(it);
+            it->second->~ClientSession();
+            clients.erase(it);
         }
     }
 
     void Server::main_controller()
     {// Server端核心逻辑
-        DBSocket server_sock(Protocol::TCP);
+        DBSocket server_sock(DBSocket::Protocol::TCP);
         server_sock.bind(12345);
         server_sock.listen();
 
         std::cout << "Server started on port 12345..." << std::endl;
 
-        // 使用epoll管理连接
-        EpollManager epoll;
-        epoll.add(server_sock.get_fd(), EPOLLIN);
 
-        while (running) {
-            auto events = epoll.wait(100);  // 100ms超时
+        while (this->is_running())
+        {
+            fd_set readSet;
+            FD_ZERO(&readSet);
+            FD_SET(server_sock.get_fd(), &readSet);
 
-            for (auto& ev : events) {
-                if (ev.data.fd == server_sock.get_fd()) {
+            // 设置50ms超时检测
+            timeval timeout{ 0, 50000 };  // 0秒+50000微秒
+
+            int ready = ::select(0, &readSet, nullptr, nullptr, &timeout);
+
+            if (ready > 0) {
+                try {
                     // 接受新连接
                     DBSocket client_sock = server_sock.accept();
-                    client_sock.set_non_blocking(true);  // 按需设置
+                    int client_temp_id = ++client_id;
 
-                    // 创建Session并托管
-                    auto session = std::make_unique<ClientSession>(
-                        std::move(client_sock),
-                        std::thread(&ClientSession::run, this)
-                    );
+                    // 启动客户端线程
+                    //ClientSession client(move(client_sock), client_temp_id);
 
-                    std::lock_guard<std::mutex> lock(mutex);
-                    clients[next_id++] = std::move(session);
+                    // 添加连接管理
+                    this->add(client_temp_id, make_unique<ClientSession>(move(client_sock),client_temp_id));
                 }
-                else {
-                    // 处理已有连接I/O事件
+                catch (const std::system_error& e) {
+                    if (!this->is_running()) break;
+                    std::cerr << "Accept error: " << e.what() << std::endl;
                 }
-
+            }
+            else if (ready == 0) {
+                // 超时无连接请求，继续循环检测运行状态
+                continue;
+            }
+            else {
+                // 处理select错误
+                if (WSAGetLastError() != WSAEINTR) {
+                    std::cerr << "Select error: " << WSAGetLastError() << std::endl;
+                }
             }
         }
 
