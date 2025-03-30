@@ -7,9 +7,9 @@
 
 #include <mutex>
 #include <unordered_map>
-#include <thread>
-#include <iostream>
 #include "Client.h"
+#include"ThreadPool.h"
+
 
 
 namespace myServer {
@@ -17,15 +17,21 @@ namespace myServer {
     private:
 
         //std::mutex mtx_;
-        static Server myServer;
-        std::mutex mutex_s;
-        std::unordered_map<int, std::thread> threads;
+        std::mutex mutexes;
+        //std::unordered_map<int, std::thread> threads;
+        ThreadPool threadPool;
         std::unordered_map<int, std::unique_ptr<ClientSession>> clients;
         //std::unordered_map<int, mySocket::DBSocket> DBSockets;
-        std::atomic<bool> running{ true };
+        std::atomic<bool> running;
+        int port;
         int client_id = 0;
 
     public:
+        Server(int port, size_t threadCount)
+            :port(port),
+            threadPool(threadCount),
+            running(true) {}
+
         ~Server() {
             stop_all();
         }

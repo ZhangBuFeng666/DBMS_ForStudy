@@ -5,6 +5,8 @@
 #include <system_error>
 #include <stdexcept>
 #include <winsock2.h>
+#include<iostream>
+#include <string>
 
 namespace mySocket {
     /**
@@ -51,8 +53,8 @@ namespace mySocket {
         DBSocket& operator=(const DBSocket&) = delete;
 
 
-        bool is_open() const { return sockfd != -1; }        
-        
+        bool is_open() const { return sockfd != -1; }
+
         /**
          * @brief 绑定Socket到指定端口
          * @param port 监听端口号（主机字节序）
@@ -82,34 +84,9 @@ namespace mySocket {
          */
         void connect(const std::string& host, uint16_t port);
 
-        /**
-         * @brief 发送数据（模板方法支持任意数据类型）
-         * @tparam T 数据类型（需满足连续内存布局）
-         * @param data 数据指针
-         * @param length 数据字节长度
-         * @return 实际发送的字节数
-         * @throw std::system_error 发送失败时抛出
-         */
-        template <typename T>
-        size_t send(const T* data, size_t length) { return 0; }
+        bool send(char* data, size_t length);
 
-        /**
-         * @brief 接收数据（模板方法支持任意数据类型）
-         * @tparam T 数据类型（需满足连续内存布局）
-         * @param buffer 接收缓冲区指针
-         * @param buf_size 缓冲区最大容量
-         * @return 实际接收的字节数（0表示连接关闭）
-         * @throw std::system_error 接收失败时抛出
-         */
-        template <typename T>
-        size_t recv(T* buffer, size_t buf_size) { return 0; }
-
-        /**
-         * @brief 设置非阻塞模式
-         * @param enable true-非阻塞模式/false-阻塞模式
-         * @throw std::system_error 设置失败时抛出
-         */
-        void set_non_blocking(bool enable);
+        bool recv(char* buffer, size_t buf_size);
 
         /**
          * @brief 安全关闭Socket连接（noexcept保证）
@@ -123,5 +100,7 @@ namespace mySocket {
         Protocol proto;        ///< 协议类型
         bool is_listening = false; ///< 是否处于监听模式
     };
+
+
 }
 #endif // NET_SOCKET_WRAPPER_H

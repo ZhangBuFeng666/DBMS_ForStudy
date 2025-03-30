@@ -1,7 +1,6 @@
-﻿  Client.cpp
-  Server.cpp
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\Server.cpp(157,37): warning C4930: “std::lock_guard<std::mutex> lock(std::mutex)”: 未调用原型函数(是否是有意用变量定义的?)
-  Unique.cpp
-  正在生成代码...
-SERVER\x64\Debug\DiffPlat.obj : warning LNK4042: 对象被多次指定；已忽略多余的指定
+﻿  SocketManager.cpp
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SocketManager.cpp(21,36): warning C4244: “参数”: 从“SOCKET”转换到“int”，可能丢失数据
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SocketManager.cpp(63,35): warning C4244: “参数”: 从“SOCKET”转换到“int”，可能丢失数据
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SocketManager.cpp(140,30): warning C4018: “<”: 有符号/无符号不匹配
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SocketManager.cpp(174,61): warning C4244: “参数”: 从“SOCKET”转换到“int”，可能丢失数据
   SERVER.vcxproj -> F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\x64\Debug\SERVER.exe
