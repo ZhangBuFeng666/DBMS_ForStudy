@@ -54,15 +54,13 @@ build/
 *.idb
 *.ilk
 *.pdb
-*.sln
 *.suo
-*.vcproj
 *vcproj.*.*.user
 *.ncb
 *.sdf
 *.opensdf
-*.vcxproj
-*vcxproj.*
+*.vcxproj.user
+*.vcproj.*.user
 
 # MinGW generated files
 *.Debug
