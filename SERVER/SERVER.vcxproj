@@ -141,6 +141,9 @@
     <ClCompile Include="LockManager.cpp" />
     <ClCompile Include="Logs.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="SQLInterface.cpp" />
+    <ClCompile Include="SQLParser.cpp" />
+    <ClCompile Include="testmain.cpp" />
     <ClCompile Include="ThreadPool.cpp" />
     <ClCompile Include="NotNull.cpp" />
     <ClCompile Include="ObjectTypes.cpp" />
@@ -161,6 +164,8 @@
     <ClInclude Include="Server.h" />
     <ClInclude Include="ObjectTypes.h" />
     <ClInclude Include="SocketManager.h" />
+    <ClInclude Include="SQLInterface.h" />
+    <ClInclude Include="SQLParser.h" />
     <ClInclude Include="Storage.h" />
     <ClInclude Include="ThreadPool.h" />
     <ClInclude Include="Tools.h" />

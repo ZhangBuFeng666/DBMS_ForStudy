@@ -9,10 +9,6 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="资源文件">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
     <Filter Include="源文件\Security">
       <UniqueIdentifier>{23043c0b-189b-4832-befb-2382c87d76ff}</UniqueIdentifier>
     </Filter>
@@ -57,6 +53,16 @@
     </Filter>
     <Filter Include="源文件\Server">
       <UniqueIdentifier>{61e9c768-5f61-4e33-a430-d76835248fe1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="头文件\sql">
+      <UniqueIdentifier>{a5253016-5993-4911-b9c2-4bde5b69bea0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\sql">
+      <UniqueIdentifier>{b6374ddb-6cff-4e72-a3fd-ccb3aac50ee6}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -126,6 +132,15 @@
     <ClCompile Include="Logs.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="testmain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="SQLInterface.cpp">
+      <Filter>源文件\sql</Filter>
+    </ClCompile>
+    <ClCompile Include="SQLParser.cpp">
+      <Filter>源文件\sql</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ObjectTypes.h">
@@ -160,6 +175,12 @@
     </ClInclude>
     <ClInclude Include="ThreadPool.h">
       <Filter>头文件\Security</Filter>
+    </ClInclude>
+    <ClInclude Include="SQLInterface.h">
+      <Filter>头文件\sql</Filter>
+    </ClInclude>
+    <ClInclude Include="SQLParser.h">
+      <Filter>头文件\sql</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -29,8 +29,8 @@ struct TableBlock {
     char* name;
     int32_t record_num;
     int32_t field_num;
-    char* tdf_path;//表格定义文件路径
-    char* trd_path;//表格记录文件路径
+    char* tdf_path;
+    char* trd_path;
     std::string crtime;
     std::string mtime;
 };
