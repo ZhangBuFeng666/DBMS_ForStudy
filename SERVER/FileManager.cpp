@@ -69,23 +69,47 @@ bool FileManager::create_directory(const string& path) {
     char normalizedPath[MAX_PATH];
     PathCanonicalizeA(normalizedPath, path.c_str());
 
-    // 递归创建多级目录
-    int result = CreateDirectoryExA(
-        nullptr,
-        normalizedPath,
-        nullptr
-    );
-
-    switch (result) {
-    case ERROR_SUCCESS:
-    case ERROR_ALREADY_EXISTS:  // 目录已存在视为成功
-        return true;
-    case ERROR_PATH_NOT_FOUND:  // 路径无效时抛出异常
+    // 检查路径是否为空
+    if (normalizedPath[0] == '\0') {
         throw runtime_error("Invalid directory path: " + path);
-    default:
-        SetLastError(result);
-        return false;
     }
+
+    // 将路径转化为可操作的字符串
+    string pathStr = normalizedPath;
+
+    // 使用迭代来逐级创建目录
+    size_t startPos = 0;
+    while (startPos < pathStr.length()) {
+        // 获取当前目录的路径
+        size_t endPos = pathStr.find('\\/', startPos);
+        if (endPos == string::npos) {
+            endPos = pathStr.length();
+        }
+
+        // 获取当前目录部分
+        string subPath = pathStr.substr(0, endPos);
+
+        // 尝试创建目录
+        if (!CreateDirectoryA(subPath.c_str(), nullptr)) {
+            DWORD error = GetLastError();
+            if (error != ERROR_ALREADY_EXISTS) {
+                // 如果目录不存在并且创建失败，抛出异常
+                if (error == ERROR_PATH_NOT_FOUND) {
+                    // 父目录不存在时，递归创建父目录
+                    if (startPos > 0) {
+                        string parentDir = pathStr.substr(0, pathStr.find_last_of('\\/', startPos));
+                        create_directory(parentDir); // 递归创建父目录
+                    }
+                }
+                throw runtime_error("Failed to create directory: " + subPath);
+            }
+        }
+
+        // 更新 startPos 以继续处理下一个目录部分
+        startPos = endPos + 1;
+    }
+
+    return true;
 }
 
 #include <AccCtrl.h>
