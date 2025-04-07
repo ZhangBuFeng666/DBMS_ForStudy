@@ -1,20 +1,99 @@
-ï»¿// SERVER.cpp : æ­¤æ–‡ä»¶åŒ…å« "main" å‡½æ•°ã€‚ç¨‹åºæ‰§è¡Œå°†åœ¨æ­¤å¤„å¼€å§‹å¹¶ç»“æŸã€‚
-//
 
-#include <iostream>
+#include "Server.h"
 
-int main()
-{
-    std::cout << "Hello World!\n";
+
+using namespace mySocket;
+using namespace std;
+
+namespace myServer {
+
+
+    void Server::add(int id, std::unique_ptr<ClientSession> client) {
+        std::lock_guard<std::mutex> lk(mutexes);
+        clients[id] = std::move(client);
+    }
+
+    // ¹Ø±ÕËùÓĞ¿Í»§¶ËÁ¬½Ó²¢ÇåÀí×ÊÔ´
+    void Server::stop_all() {
+        running = false;  // Í¨ÖªÈ«¾ÖÍ£Ö¹
+
+        std::lock_guard<std::mutex> lock(mutexes);
+
+        // ·ÖÁ½²½²Ù×÷È·±£Ïß³Ì°²È«
+        for (auto& client : clients) {
+            if (client.second) {
+                client.second->~ClientSession();  // Ç¿ÖÆ¹Ø±ÕÌ×½Ó×ÖÒÔÖĞ¶Ï×èÈû²Ù×÷
+            }
+        }
+
+        clients.clear();  // unique_ptr ×Ô¶¯Îö¹¹£¬´¥·¢ ClientSession µÄÎö¹¹º¯Êı
+    }
+
+    // ÒÆ³ıÖ¸¶¨¿Í»§¶Ë
+    void Server::remove(int client_id) {
+        std::lock_guard<std::mutex> lock(mutexes);
+
+        if (auto it = clients.find(client_id); it != clients.end()) {
+            it->second->~ClientSession();
+            clients.erase(it);
+        }
+    }
+
+    void Server::main_controller()
+    {// Server¶ËºËĞÄÂß¼­
+        DBSocket server_sock(DBSocket::Protocol::TCP);
+        server_sock.bind(port);
+        server_sock.listen();
+
+        std::cout << "Server started on port "<< port<<" ..." << std::endl;
+
+
+        while (this->is_running())
+        {
+            fd_set readSet;
+            FD_ZERO(&readSet);
+            FD_SET(server_sock.get_fd(), &readSet);
+
+            // ÉèÖÃ50ms³¬Ê±¼ì²â
+            timeval timeout{ 0, 50000 };  // 0Ãë+50000Î¢Ãë
+
+            int ready = ::select(0, &readSet, nullptr, nullptr, &timeout);
+
+            if (ready > 0) {
+                try {
+                    // ½ÓÊÜĞÂÁ¬½Ó
+                    DBSocket client_sock = server_sock.accept();
+                    int client_temp_id = ++client_id;
+
+                    // Æô¶¯¿Í»§¶ËÏß³Ì
+                    //ClientSession client(move(client_sock), client_temp_id);
+                   
+                    // Ìí¼ÓÁ¬½Ó¹ÜÀí
+                    this->add(client_temp_id, make_unique<ClientSession>(move(client_sock),client_temp_id));
+
+                    // ÔÚÏß³Ì³ØÖĞÖ´ĞĞ¿Í»§¶Ë»á»°
+                    threadPool.enqueueTask([this, client_temp_id] {
+                        clients[client_temp_id]->start();
+                        });
+
+                }
+                catch (const std::system_error& e) {
+                    if (!this->is_running()) break;
+                    std::cerr << "Accept error: " << e.what() << std::endl;
+                }
+            }
+            else if (ready == 0) {
+                // ³¬Ê±ÎŞÁ¬½ÓÇëÇó£¬¼ÌĞøÑ­»·¼ì²âÔËĞĞ×´Ì¬
+                continue;
+            }
+            else {
+                // ´¦Àíselect´íÎó
+                if (WSAGetLastError() != WSAEINTR) {
+                    std::cerr << "Select error: " << WSAGetLastError() << std::endl;
+                }
+            }
+        }
+
+    }
 }
 
-// è¿è¡Œç¨‹åº: Ctrl + F5 æˆ–è°ƒè¯• >â€œå¼€å§‹æ‰§è¡Œ(ä¸è°ƒè¯•)â€èœå•
-// è°ƒè¯•ç¨‹åº: F5 æˆ–è°ƒè¯• >â€œå¼€å§‹è°ƒè¯•â€èœå•
-
-// å…¥é—¨ä½¿ç”¨æŠ€å·§: 
-//   1. ä½¿ç”¨è§£å†³æ–¹æ¡ˆèµ„æºç®¡ç†å™¨çª—å£æ·»åŠ /ç®¡ç†æ–‡ä»¶
-//   2. ä½¿ç”¨å›¢é˜Ÿèµ„æºç®¡ç†å™¨çª—å£è¿æ¥åˆ°æºä»£ç ç®¡ç†
-//   3. ä½¿ç”¨è¾“å‡ºçª—å£æŸ¥çœ‹ç”Ÿæˆè¾“å‡ºå’Œå…¶ä»–æ¶ˆæ¯
-//   4. ä½¿ç”¨é”™è¯¯åˆ—è¡¨çª—å£æŸ¥çœ‹é”™è¯¯
-//   5. è½¬åˆ°â€œé¡¹ç›®â€>â€œæ·»åŠ æ–°é¡¹â€ä»¥åˆ›å»ºæ–°çš„ä»£ç æ–‡ä»¶ï¼Œæˆ–è½¬åˆ°â€œé¡¹ç›®â€>â€œæ·»åŠ ç°æœ‰é¡¹â€ä»¥å°†ç°æœ‰ä»£ç æ–‡ä»¶æ·»åŠ åˆ°é¡¹ç›®
-//   6. å°†æ¥ï¼Œè‹¥è¦å†æ¬¡æ‰“å¼€æ­¤é¡¹ç›®ï¼Œè¯·è½¬åˆ°â€œæ–‡ä»¶â€>â€œæ‰“å¼€â€>â€œé¡¹ç›®â€å¹¶é€‰æ‹© .sln æ–‡ä»¶

@@ -9,14 +9,178 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="资源文件">
+    <Filter Include="源文件\Security">
+      <UniqueIdentifier>{23043c0b-189b-4832-befb-2382c87d76ff}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Network">
+      <UniqueIdentifier>{86cc195e-8369-4bf2-adb8-09ddd4579d8b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Constraints">
+      <UniqueIdentifier>{a16cdc73-65b0-4731-855e-ebf28cc3a57e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Common">
+      <UniqueIdentifier>{75f1a8be-266a-4735-a300-4aad668793ce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Log">
+      <UniqueIdentifier>{cd803c38-2dc9-4290-98bc-ce851447c582}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Storage">
+      <UniqueIdentifier>{333b15bc-34d7-4f3f-97b0-56e34bac03c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Common">
+      <UniqueIdentifier>{0aaf76a5-de04-4572-9a7a-a74d802d8f18}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Constraints">
+      <UniqueIdentifier>{2fb44f0a-bd82-4e3e-8b24-56668017127b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Index">
+      <UniqueIdentifier>{78d66edb-1b16-457c-aeb4-c8433569e23b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Log">
+      <UniqueIdentifier>{32a31fe6-ef5b-4a8d-b66f-017eae6ae34d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Network">
+      <UniqueIdentifier>{5ba22bd9-c76a-4fdd-80a7-9b8e1a4f686a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Security">
+      <UniqueIdentifier>{6eb842e7-6ae1-498a-864c-e5ff17cdc5dc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Storage">
+      <UniqueIdentifier>{6dcae414-4987-489b-a1b3-86881a02bf38}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Indexes">
+      <UniqueIdentifier>{f25ced7d-7e6c-4834-acf5-cd0800574300}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Server">
+      <UniqueIdentifier>{61e9c768-5f61-4e33-a430-d76835248fe1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\资源文件">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="头文件\sql">
+      <UniqueIdentifier>{a5253016-5993-4911-b9c2-4bde5b69bea0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\sql">
+      <UniqueIdentifier>{b6374ddb-6cff-4e72-a3fd-ccb3aac50ee6}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="SERVER.cpp">
+    <ClCompile Include="Unique.cpp">
+      <Filter>源文件\Constraints</Filter>
+    </ClCompile>
+    <ClCompile Include="Foreign.cpp">
+      <Filter>源文件\Constraints</Filter>
+    </ClCompile>
+    <ClCompile Include="NotNull.cpp">
+      <Filter>源文件\Constraints</Filter>
+    </ClCompile>
+    <ClCompile Include="Primary.cpp">
+      <Filter>源文件\Constraints</Filter>
+    </ClCompile>
+    <ClCompile Include="Others.cpp">
+      <Filter>源文件\Constraints</Filter>
+    </ClCompile>
+    <ClCompile Include="BufferManager.cpp">
+      <Filter>源文件\Storage</Filter>
+    </ClCompile>
+    <ClCompile Include="FileManager.cpp">
+      <Filter>源文件\Storage</Filter>
+    </ClCompile>
+    <ClCompile Include="Identity.cpp">
+      <Filter>源文件\Security</Filter>
+    </ClCompile>
+    <ClCompile Include="ThreadPool.cpp">
+      <Filter>源文件\Security</Filter>
+    </ClCompile>
+    <ClCompile Include="SocketManager.cpp">
+      <Filter>源文件\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="ChangeLog.cpp">
+      <Filter>源文件\Log</Filter>
+    </ClCompile>
+    <ClCompile Include="RecoverManager.cpp">
+      <Filter>源文件\Log</Filter>
+    </ClCompile>
+    <ClCompile Include="LockManager.cpp">
+      <Filter>源文件\Log</Filter>
+    </ClCompile>
+    <ClCompile Include="BPlusTree.cpp">
+      <Filter>源文件\Indexes</Filter>
+    </ClCompile>
+    <ClCompile Include="ObjectTypes.cpp">
+      <Filter>源文件\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Tools.cpp">
+      <Filter>源文件\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="DiffPlat.h">
+      <Filter>头文件\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="DiffPlat.cpp">
+      <Filter>源文件\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="Server.cpp">
+      <Filter>源文件\Server</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Client.cpp">
+      <Filter>源文件\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="Logs.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="testmain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="SQLInterface.cpp">
+      <Filter>源文件\sql</Filter>
+    </ClCompile>
+    <ClCompile Include="SQLParser.cpp">
+      <Filter>源文件\sql</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ObjectTypes.h">
+      <Filter>头文件\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Tools.h">
+      <Filter>头文件\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Constraints.h">
+      <Filter>头文件\Constraints</Filter>
+    </ClInclude>
+    <ClInclude Include="Indexes.h">
+      <Filter>头文件\Index</Filter>
+    </ClInclude>
+    <ClInclude Include="Logs.h">
+      <Filter>头文件\Log</Filter>
+    </ClInclude>
+    <ClInclude Include="SocketManager.h">
+      <Filter>头文件\Network</Filter>
+    </ClInclude>
+    <ClInclude Include="Identity.h">
+      <Filter>头文件\Security</Filter>
+    </ClInclude>
+    <ClInclude Include="Storage.h">
+      <Filter>头文件\Storage</Filter>
+    </ClInclude>
+    <ClInclude Include="Server.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Client.h">
+      <Filter>头文件\Network</Filter>
+    </ClInclude>
+    <ClInclude Include="ThreadPool.h">
+      <Filter>头文件\Security</Filter>
+    </ClInclude>
+    <ClInclude Include="SQLInterface.h">
+      <Filter>头文件\sql</Filter>
+    </ClInclude>
+    <ClInclude Include="SQLParser.h">
+      <Filter>头文件\sql</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

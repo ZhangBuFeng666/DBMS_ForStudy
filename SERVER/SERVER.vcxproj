@@ -104,10 +104,12 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>$(CoreLibraryDependencies);ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -127,7 +129,46 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="SERVER.cpp" />
+    <ClCompile Include="BPlusTree.cpp" />
+    <ClCompile Include="BufferManager.cpp" />
+    <ClCompile Include="ChangeLog.cpp" />
+    <ClCompile Include="Client.cpp" />
+    <ClCompile Include="DiffPlat.cpp" />
+    <ClCompile Include="DiffPlat.h" />
+    <ClCompile Include="FileManager.cpp" />
+    <ClCompile Include="Foreign.cpp" />
+    <ClCompile Include="Identity.cpp" />
+    <ClCompile Include="LockManager.cpp" />
+    <ClCompile Include="Logs.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="SQLInterface.cpp" />
+    <ClCompile Include="SQLParser.cpp" />
+    <ClCompile Include="testmain.cpp" />
+    <ClCompile Include="ThreadPool.cpp" />
+    <ClCompile Include="NotNull.cpp" />
+    <ClCompile Include="ObjectTypes.cpp" />
+    <ClCompile Include="Others.cpp" />
+    <ClCompile Include="Primary.cpp" />
+    <ClCompile Include="RecoverManager.cpp" />
+    <ClCompile Include="Server.cpp" />
+    <ClCompile Include="SocketManager.cpp" />
+    <ClCompile Include="Tools.cpp" />
+    <ClCompile Include="Unique.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Client.h" />
+    <ClInclude Include="Constraints.h" />
+    <ClInclude Include="Identity.h" />
+    <ClInclude Include="Indexes.h" />
+    <ClInclude Include="Logs.h" />
+    <ClInclude Include="Server.h" />
+    <ClInclude Include="ObjectTypes.h" />
+    <ClInclude Include="SocketManager.h" />
+    <ClInclude Include="SQLInterface.h" />
+    <ClInclude Include="SQLParser.h" />
+    <ClInclude Include="Storage.h" />
+    <ClInclude Include="ThreadPool.h" />
+    <ClInclude Include="Tools.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
