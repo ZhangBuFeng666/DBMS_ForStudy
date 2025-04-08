@@ -50,6 +50,7 @@ CMakeLists.txt.user*
 out/
 .vs/
 build/
+x64/
 *.ib_pdb_index
 *.idb
 *.ilk
