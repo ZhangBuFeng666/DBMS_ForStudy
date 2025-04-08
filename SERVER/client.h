@@ -1,13 +1,14 @@
 #pragma once
 
 #include "SocketManager.h"
+#include <nlohmann/json.hpp>
 #include<thread>
 
 class ClientSession {
 public:
     // 构造函数（接管socket和线程）
-    ClientSession(mySocket::DBSocket&& sock, int id)
-        :sock(std::move(sock)),
+    ClientSession(mySocket::DBSocket&& from_sock, int id)
+        :in_sock(std::move(from_sock)),
         client_id(id),
         last_active(std::chrono::steady_clock::now()),
         is_active(true){}
@@ -30,8 +31,10 @@ public:
     void stop();
 
 private:
-    mySocket::DBSocket sock;                // 客户端套接字
+    mySocket::DBSocket in_sock;                // 输入（接收）套接字
+    mySocket::DBSocket out_sock;               // 输出（发送）套接字
     int client_id;                     // 客户端ID
+    std::string user_name;              // 用户名
     std::thread worker_thread;    // 专属处理线程
     std::string recv_buffer;      // 接收缓冲区
     std::atomic<bool> is_active; // 连接状态

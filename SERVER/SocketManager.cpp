@@ -110,7 +110,7 @@ namespace mySocket {
     //    }
     //}
 
-    bool DBSocket::DBSocket::recv(char* buffer, size_t buf_size) {
+    size_t DBSocket::DBSocket::recv(char* buffer, size_t buf_size) {
         // 检查缓冲区是否有效
         if (buffer == nullptr || buf_size == 0) {
             throw std::invalid_argument("Invalid buffer or buffer size");

@@ -86,7 +86,7 @@ namespace mySocket {
 
         bool send(char* data, size_t length);
 
-        bool recv(char* buffer, size_t buf_size);
+        size_t recv(char* buffer, size_t buf_size);
 
         /**
          * @brief 安全关闭Socket连接（noexcept保证）
