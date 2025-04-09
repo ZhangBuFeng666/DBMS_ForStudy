@@ -71,10 +71,8 @@ namespace myServer {
                     // 添加连接管理
                     this->add(client_temp_id, make_unique<ClientSession>(move(client_sock),client_temp_id));
 
-                    // 在线程池中执行客户端会话
-                    threadPool.enqueueTask([this, client_temp_id] {
-                        clients[client_temp_id]->start();
-                        });
+                    // 启动客户端会话
+                    clients[client_temp_id]->start(threadPool);
 
                 }
                 catch (const std::system_error& e) {

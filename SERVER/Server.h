@@ -14,6 +14,7 @@
 
 namespace myServer {
     class Server {
+        friend class ClientSession;
     private:
 
         //std::mutex mtx_;

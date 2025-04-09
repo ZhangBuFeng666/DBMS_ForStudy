@@ -95,71 +95,47 @@ namespace mySocket {
 
     //}
 
-    void DBSocket::connect(const std::string& host, uint16_t port) {}
+    //void DBSocket::connect(const std::string& host, uint16_t port) {}
 
-    //void DBSocket::send(const std::string& data) {
-    //    try {
-    //        while (client.isActive()) {
-    //            std::string response = "服务器回应数据";
-    //            client.sock.send(response.c_str(), response.size());  // 发送响应数据给客户端
-    //            std::this_thread::sleep_for(std::chrono::seconds(1));  // 每秒发送一次
-    //        }
-    //    }
-    //    catch (...) {
-    //        std::cerr << "发送数据时发生错误" << std::endl;
-    //    }
-    //}
+    size_t DBSocket::recv(std::string& buffer) {
+        // 为接收数据准备缓冲区
+        const size_t bufferSize = 1024;  // 你可以根据实际情况调整大小
+        char tempBuffer[bufferSize];  // 临时缓冲区
 
-    size_t DBSocket::DBSocket::recv(char* buffer, size_t buf_size) {
-        // 检查缓冲区是否有效
-        if (buffer == nullptr || buf_size == 0) {
-            throw std::invalid_argument("Invalid buffer or buffer size");
+        // 接收数据直到完全接收
+        size_t dataSize = 0;
+        //阻塞模式下拦截
+        int bytesReceived = ::recv(sockfd, tempBuffer, sizeof(tempBuffer), 0);
+
+        if (bytesReceived == SOCKET_ERROR) {
+            throw std::system_error(WSAGetLastError(), std::system_category(), "Failed to receive data");
         }
-
-        // 步骤1: 先接收固定大小的头部，假设头部是4字节，表示数据的大小
-        uint32_t dataSize = 0;
-        int bytesReceived = 0;
-        while (bytesReceived < sizeof(dataSize)) {
-            int result = ::recv(sockfd, reinterpret_cast<char*>(&dataSize) + bytesReceived, sizeof(dataSize) - bytesReceived, 0);
-            if (result == SOCKET_ERROR) {
-                throw std::system_error(WSAGetLastError(), std::system_category(), "Failed to receive data size");
-            }
-            if (result == 0) {
-                throw std::runtime_error("Connection closed while waiting for data size");
-            }
-            bytesReceived += result;
+        //第一批写入
+        buffer.append(tempBuffer, bytesReceived);
+        dataSize += bytesReceived;
+        //对于小规模输入，上面就已经满足需求；对于大规模输入，需要循环接收
+        //开启非阻塞模式
+        set_non_blocking();
+        while (bytesReceived >= 1024) {
+            // 将接收到的字节追加到字符串中
+            bytesReceived = ::recv(sockfd, tempBuffer, sizeof(tempBuffer), 0);
+            buffer.append(tempBuffer, bytesReceived);
+            dataSize += bytesReceived;
         }
+        set_blocking();
 
-        // 步骤2: 如果数据的实际大小超过缓冲区大小，则抛出异常
-        if (dataSize > buf_size) {
-            throw std::overflow_error("Received data size exceeds buffer size");
-        }
-
-        // 步骤3: 接收实际的数据，确保数据接收完
-        bytesReceived = 0;
-        while (bytesReceived < dataSize) {
-            int result = ::recv(sockfd, buffer + bytesReceived, dataSize - bytesReceived, 0);
-            if (result == SOCKET_ERROR) {
-                throw std::system_error(WSAGetLastError(), std::system_category(), "Failed to receive actual data");
-            }
-            if (result == 0) {
-                throw std::runtime_error("Connection closed while receiving data");
-            }
-            bytesReceived += result;
-        }
-
-        // 返回实际接收到的数据字节数
-        return bytesReceived;
-    
+        return dataSize;
     }
-    bool DBSocket::send(char* data, size_t length) {
+
+
+    size_t DBSocket::send(const char* data, size_t length) {
         // 通过底层套接字实现数据发送
-        int result = ::send(sockfd, data, static_cast<int>(length) + 4, 0);//约定前4字节为数据长度
+        size_t result = ::send(sockfd, data, static_cast<int>(length), 0);
         if (result == SOCKET_ERROR) {
             std::cerr << "Send failed: " << WSAGetLastError() << std::endl;
             return 0;
         }
-        return result > 0;  // 返回发送的字节数
+        return result;  // 返回发送的字节数
     }
 
 
@@ -171,7 +147,7 @@ namespace mySocket {
             ::shutdown(sockfd, 2);  // 同时关闭读写通道
 
             // 2. 执行平台相关关闭操作
-            const int close_result = platform::close_socket(sockfd);
+            const SOCKET close_result = platform::close_socket(sockfd);
 
             // 3. 重置描述符并记录日志
             sockfd = -1;
@@ -189,4 +165,22 @@ namespace mySocket {
     }
 
 
+
+    // 设置为非阻塞模式
+    void DBSocket::set_non_blocking() {
+        u_long mode = 1;  // 1 表示非阻塞模式
+        if (ioctlsocket(sockfd, FIONBIO, &mode) != 0) {
+            throw std::system_error(WSAGetLastError(), std::system_category(), "Failed to set socket to non-blocking mode");
+        }
+        std::cout << "Socket set to non-blocking mode." << std::endl;
+    }
+
+    // 设置为阻塞模式
+    void DBSocket::set_blocking() {
+        u_long mode = 0;  // 0 表示阻塞模式
+        if (ioctlsocket(sockfd, FIONBIO, &mode) != 0) {
+            throw std::system_error(WSAGetLastError(), std::system_category(), "Failed to set socket to blocking mode");
+        }
+        std::cout << "Socket set to blocking mode." << std::endl;
+    }
 }
