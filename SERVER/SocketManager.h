@@ -76,17 +76,15 @@ namespace mySocket {
          */
         DBSocket accept();
 
-        /**
-         * @brief 连接到目标主机（TCP客户端/UDP设置目标地址）
-         * @param host 目标主机IP地址或域名
-         * @param port 目标端口号（主机字节序）
-         * @throw std::system_error 连接失败时抛出
-         */
-        void connect(const std::string& host, uint16_t port);
 
-        bool send(char* data, size_t length);
+        //void connect(const std::string& host, uint16_t port);
 
-        bool recv(char* buffer, size_t buf_size);
+        size_t send(const char* data, size_t length);
+        size_t recv(std::string& buffer);
+
+        void set_non_blocking();
+        void set_blocking();
+
 
         /**
          * @brief 安全关闭Socket连接（noexcept保证）

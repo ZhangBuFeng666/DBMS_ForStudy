@@ -1,6 +1,8 @@
 #pragma once
 
 #include "SocketManager.h"
+#include "ThreadPool.h"
+#include <nlohmann/json.hpp>
 #include<thread>
 
 class ClientSession {
@@ -26,17 +28,30 @@ public:
     // 标记为需要关闭
     void mark_for_close() { is_active = false; }
 
-    void start();
-    void stop();
+    void start(ThreadPool& pool);
+    void stop(std::thread worker_thread);
+    bool send_massage(const nlohmann::json& data);//外部接口
 
 private:
-    mySocket::DBSocket sock;                // 客户端套接字
-    int client_id;                     // 客户端ID
-    std::thread worker_thread;    // 专属处理线程
-    std::string recv_buffer;      // 接收缓冲区
-    std::atomic<bool> is_active; // 连接状态
+    // 客户端对该链接处理逻辑
+    void client_handle_recv();//
+    void enqueue_message(const std::string& message);//（send_massage调用）将待发送信息保存到队列
+    void client_handle_send();//（线程持有）处理发送队列
+
+    mySocket::DBSocket sock;            // 套接字
+    int client_id;                      // 客户端ID
+    std::string user_name;              // 用户名
+
+    std::queue<std::string> send_queue; // 发送队列
+    std::mutex send_mutex;              // 发送队列互斥锁
+    std::condition_variable send_cv;    // 发送队列条件变量
+
+    std::string recv_buffer;            // 接收缓冲区
+
+    std::atomic<bool> is_active;        // 连接状态(线程安全，硬件层强制唯一)
+
     std::chrono::steady_clock::time_point last_active; // 最后活动时间
 
-    // 客户端对该链接处理逻辑
-    void client_handle();
+    //std::thread worker_thread_recv;   // 专属处理接收线程
+    //std::thread worker_thread_send;   // 专属处理发送线程
 };
