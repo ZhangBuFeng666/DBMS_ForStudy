@@ -13,7 +13,7 @@
 class InternetConnector : public QObject{
 
     Q_OBJECT
-    friend class MultiGame;
+    //friend class MultiGame;
 
 public:
     InternetConnector(const QString &host, quint16 port);
@@ -23,23 +23,23 @@ public:
     bool login(const QString &id, const QString &password);
 
     // 单人游戏完成时发送结果
-    void sendSingleGameResult(int difficulty, qint64 timeUsed);
+    // void sendSingleGameResult(int difficulty, qint64 timeUsed);
 
     // 请求联机对战
-    bool sendMatchRequest(int difficulty);
-    bool exchangeMatrices(QVector<QVector<int>> &myMatrix, QVector<QVector<int>> &opponentMatrix);
+    // bool sendMatchRequest(int difficulty);
+    // bool exchangeMatrices(QVector<QVector<int>> &myMatrix, QVector<QVector<int>> &opponentMatrix);
 
-    // 对战中发送坐标操作
-    void sendMove(int x1, int y1, int x2, int y2);
+    // 发送用户请求的操作
+    void sendOrder(const QString &qstr);
 
     // 发送对局完成信息
-    void sendGameOver(bool isWinner, int difficulty, qint64 timeUsed);
+    // void sendGameOver(bool isWinner, int difficulty, qint64 timeUsed);
 
     // 请求个人记录
-    QVector<qint64> requestPersonalRecord();
+    // QVector<qint64> requestPersonalRecord();
 
-    //（对方）移动对应图块
-    void getMoveMessage();
+    //接收并显示数据
+    void recvMessage();
 
     void stopListening();
     void startListening();
@@ -49,13 +49,13 @@ signals:
     void findOp();
     void getMatrix();
     void updateGraphicsSignal(QPair<int ,int> first,QPair<int ,int> second); // 更新图案的信号
-    void opWin();
+    //void opWin();
 
 private:
     QTcpSocket *socket;
 
     // 私有的 JSON 数据发送和接收
-    bool sendMassage(const QString &str);
+    bool sendMassage(const QJsonObject &json);
     QJsonObject receiveMassage(int special = 0);
 };
 

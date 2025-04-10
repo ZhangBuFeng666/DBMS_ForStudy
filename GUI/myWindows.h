@@ -1,8 +1,13 @@
 #ifndef MYWINDOWS_H
 #define MYWINDOWS_H
 
-#include <QApplication>
 #include <QMainWindow>
+#include <QMenuBar>
+#include <QStatusBar>
+#include <QTabWidget>
+#include <QSplitter>
+#include <QActionGroup>
+#include <QApplication>
 #include <QMessageBox>
 #include <QTextEdit>
 #include <QPushButton>
@@ -47,82 +52,128 @@ private:
     InternetConnector *connector;
 };
 
-class MenuWindow : public QWidget {
+// class MyMainWindow : public QWidget {
+//     Q_OBJECT
+// public:
+//     MyMainWindow(InternetConnector *connector,QWidget *parent = nullptr);
+
+// signals:
+//     void selectMode();
+//     void askHelp();
+//     void viewRecords();
+
+// private slots:
+//     void onSelectModeClicked() {
+//         emit selectMode();
+//     }
+//     void onHelpClicked() {
+//         emit askHelp();
+//     }
+//     void onViewRecordsClicked() {
+//         emit viewRecords();
+//     }
+
+
+// private:
+//     InternetConnector *connector;
+//     QVBoxLayout *layout;
+//     QPushButton *selectModeButton;
+//     QPushButton *helpButton;
+//     QPushButton *viewRecordsButton;
+//     QPushButton *exitButton;
+// mainwindow.h
+
+
+class QLineEdit;
+class QTextEdit;
+class QPushButton;
+
+class MyMainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    MenuWindow(InternetConnector *connector,QWidget *parent = nullptr);
-
-signals:
-    void selectMode();
-    void askHelp();
-    void viewRecords();
+    MyMainWindow(InternetConnector *connector,QWidget *parent = nullptr);
 
 private slots:
-    void onSelectModeClicked() {
-        emit selectMode();
-    }
-    void onHelpClicked() {
-        emit askHelp();
-    }
-    void onViewRecordsClicked() {
-        emit viewRecords();
-    }
+    void handleCommand();
+    void executeScript();
+    void switchCmdMode();
+    void switchScriptMode();
+    void newSession();
+    void closeTab(int index);
 
-
-private:
-    InternetConnector *connector;
-    QVBoxLayout *layout;
-    QPushButton *selectModeButton;
-    QPushButton *helpButton;
-    QPushButton *viewRecordsButton;
-    QPushButton *exitButton;
-
-};
-
-class SelectModeWindow : public QWidget {
-    Q_OBJECT
-public:
-    SelectModeWindow(QWidget *parent = nullptr);
-
-signals:
-    void startGame();
-
-private slots:
-    void onStartClicked() {
-        emit startGame();
-    }
+    // void saveSession(int sessionId);//保存会话快照
+    // void loadSession(const QString& sessionFile);//载入会话快照
 
 private:
-    QVBoxLayout *layout;
-    QLabel *difficultyLabel;
-    QComboBox *difficultyCombo;
-    QLabel *modeLabel;
-    QComboBox *modeCombo;
-    QLabel *statusLabel;
-    QPushButton *startButton;
+    void createMenu();
+    void createLayout();
+    // void sendToServer(const QString& cmd);
 
-    friend class MainController;
-};
-class HelpWindow : public QWidget {
-    Q_OBJECT
-public:
-    HelpWindow(QWidget *parent = nullptr);
-private:
-    QVBoxLayout *layout;
-    QTextEdit *helpText;
+    enum Mode { CMD_MODE, SCRIPT_MODE };
+    Mode currentMode;
 
-};
+    // UI组件
+    QTabWidget *resultTabs;
+    QWidget *inputArea;
+    QLineEdit *cmdInput;
+    QTextEdit *scriptInput;
+    QPushButton *submitBtn;
 
-class RecordWindow : public QWidget {
-    Q_OBJECT
-public:
-    RecordWindow(InternetConnector *connector, QWidget *parent = nullptr);
-private:
-    void loadRecords() ;
-    QVBoxLayout *layout;
-    QTextEdit *recordText;
+    // 菜单项
+    QMenu *fileMenu;
+    QMenu *modeMenu;
+    QAction *newSessionAction;
+    QActionGroup *modeGroup;
+
+    //网络连接类
     InternetConnector *connector;
 };
+// };
+
+// class SelectModeWindow : public QWidget {
+//     Q_OBJECT
+// public:
+//     SelectModeWindow(QWidget *parent = nullptr);
+
+// signals:
+//     void startGame();
+
+// private slots:
+//     void onStartClicked() {
+//         emit startGame();
+//     }
+
+// private:
+//     QVBoxLayout *layout;
+//     QLabel *difficultyLabel;
+//     QComboBox *difficultyCombo;
+//     QLabel *modeLabel;
+//     QComboBox *modeCombo;
+//     QLabel *statusLabel;
+//     QPushButton *startButton;
+
+//     friend class MainController;
+// };
+// class HelpWindow : public QWidget {
+//     Q_OBJECT
+// public:
+//     HelpWindow(QWidget *parent = nullptr);
+// private:
+//     QVBoxLayout *layout;
+//     QTextEdit *helpText;
+
+// };
+
+// class RecordWindow : public QWidget {
+//     Q_OBJECT
+// public:
+//     RecordWindow(InternetConnector *connector, QWidget *parent = nullptr);
+// private:
+//     void loadRecords() ;
+//     QVBoxLayout *layout;
+//     QTextEdit *recordText;
+//     InternetConnector *connector;
+// };
 
 // class GameOverWindow : public QWidget {
 //     Q_OBJECT
@@ -152,12 +203,12 @@ public:
     ~MainController() ;
 
 private slots:
-    void showMenuWindow();
-    void showSelectModeWindow();
-    void showHelpWindow();
-    void showRecordWindow();
-    void startGameWindow();
-    void showOverWindow(int totalElapsedMs,int completed);
+    void showMyMainWindow();
+    //void showSelectModeWindow();
+    //void showHelpWindow();
+    //void showRecordWindow();
+    //void startGameWindow();
+    //void showOverWindow(int totalElapsedMs,int completed);
 
     //void showGameOverWindow() ;
     //void createAndShowGameWindow();
@@ -168,15 +219,15 @@ private:
     void hideAllWindows();
 
     LoginWindow *loginWindow;
-    MenuWindow *menuWindow;
-    HelpWindow *helpWindow;
-    SelectModeWindow *selectModeWindow;
+    MyMainWindow *mainWindow;
+    //HelpWindow *helpWindow;
+    //SelectModeWindow *selectModeWindow;
 
 
     // GameWindow *gameWindow = nullptr;
     // GameOverWindow *gameOverWindow = nullptr;
 
-    RecordWindow *recordWindow;
+    //RecordWindow *recordWindow;
 
 
     //新加部分

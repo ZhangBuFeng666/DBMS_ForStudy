@@ -33,8 +33,8 @@ InternetConnector::~InternetConnector() {
     }
 }
 
-void InternetConnector::getMoveMessage() {
-    QJsonObject message = receiveJson(2);//直接读取
+void InternetConnector::recvMessage() {
+    QJsonObject message = receiveMassage(2);//直接读取
 
     if (message.isEmpty()) {
         qDebug() << "Received empty or invalid message from server.";
@@ -58,7 +58,7 @@ void InternetConnector::getMoveMessage() {
 
     } else if (type == "GameOver") {
         stopListening();
-        emit opWin();//connect到gamePage生成multi部分
+        //emit opWin();//connect到gamePage生成multi部分
         qDebug() << "Another person wins...";
         // 处理游戏结束逻辑
     } else {
@@ -73,8 +73,8 @@ bool InternetConnector::login(const QString &id, const QString &password) {
     loginRequest["ID"] = id;
     loginRequest["Password"] = password;
 
-    sendJson(loginRequest);
-    QJsonObject response = receiveJson();
+    sendMassage(loginRequest);
+    QJsonObject response = receiveMassage();
 
     if (response["Status"].toString() == "Success") {
         qDebug() << "登录成功";
@@ -85,14 +85,14 @@ bool InternetConnector::login(const QString &id, const QString &password) {
     }
 }
 
-void InternetConnector::sendSingleGameResult(int difficulty, qint64 timeUsed) {
-    QJsonObject result;
-    result["Type"] = "SingleGameResult";
-    result["Difficulty"] = difficulty;
-    result["TimeUsed"] = timeUsed;
+// void InternetConnector::sendSingleGameResult(int difficulty, qint64 timeUsed) {
+//     QJsonObject result;
+//     result["Type"] = "SingleGameResult";
+//     result["Difficulty"] = difficulty;
+//     result["TimeUsed"] = timeUsed;
 
-    sendJson(result);
-}
+//     sendMassage(result);
+// }
 
 
 QJsonArray convertToQJsonArray(const QVector<QVector<int>> &matrix) {
@@ -107,31 +107,31 @@ QJsonArray convertToQJsonArray(const QVector<QVector<int>> &matrix) {
     return jsonArray;
 }
 
-bool InternetConnector::sendMatchRequest(int difficulty) {
-    // 创建并发送匹配请求
-    QJsonObject matchRequest = {
-        {"Type", "MatchRequest"},
-        {"Difficulty", difficulty}
-    };
-    sendJson(matchRequest);
+// bool InternetConnector::sendMatchRequest(int difficulty) {
+//     // 创建并发送匹配请求
+//     QJsonObject matchRequest = {
+//         {"Type", "MatchRequest"},
+//         {"Difficulty", difficulty}
+//     };
+//     sendMassage(matchRequest);
 
-    // 接收并处理匹配响应
-    QJsonObject response = receiveJson(1);
-    if(response["Status"].toString() == "Matched"){
-        qDebug() << "匹配成功，等待进行矩阵交换";
-        return true;
-    }else if (response["Status"].toString() == "Waiting") {
-        QJsonObject response = receiveJson(1);
-        if(response["Status"].toString() == "Matched"){
+//     // 接收并处理匹配响应
+//     QJsonObject response = receiveMassage(1);
+//     if(response["Status"].toString() == "Matched"){
+//         qDebug() << "匹配成功，等待进行矩阵交换";
+//         return true;
+//     }else if (response["Status"].toString() == "Waiting") {
+//         QJsonObject response = receiveMassage(1);
+//         if(response["Status"].toString() == "Matched"){
 
-            qDebug() << "匹配成功，等待进行矩阵交换";
-            return true;
-        }
-    }
-    qDebug() << "匹配失败：" << response["Message"].toString();
-    return false;
+//             qDebug() << "匹配成功，等待进行矩阵交换";
+//             return true;
+//         }
+//     }
+//     qDebug() << "匹配失败：" << response["Message"].toString();
+//     return false;
 
-}
+// }
 
 // bool internetConnector::exchangeMatrices(QVector<QVector<int>> &myMatrix, QVector<QVector<int>> &opponentMatrix) {
 //     // 发送自己的矩阵到服务器
@@ -165,46 +165,48 @@ bool InternetConnector::sendMatchRequest(int difficulty) {
 
 
 
-void InternetConnector::sendMove(int x1, int y1, int x2, int y2) {
-    QJsonObject move;
-    move["Type"] = "Move";
-    move["X1"] = x1;
-    move["Y1"] = y1;
-    move["X2"] = x2;
-    move["Y2"] = y2;
-
-    sendJson(move);
-}
-
-void InternetConnector::sendGameOver(bool isWinner, int difficulty, qint64 timeUsed) {
-    QJsonObject gameOver;
-    gameOver["Type"] = "GameOver";
-    gameOver["IsWinner"] = isWinner;
-    gameOver["Difficulty"] = difficulty;
-    gameOver["TimeUsed"] = timeUsed;
-    stopListening();
-    sendJson(gameOver);
-}
-
-QVector<qint64> InternetConnector::requestPersonalRecord() {
-    QJsonObject request;
-    request["Type"] = "PersonalRecord";
-
-    sendJson(request);
-
-    QVector<qint64> records(3);
-    QJsonObject rec = receiveJson();
-    if(rec["Status"]=="Success"){
-        QJsonValueRef jsonValueRef0 = rec["Easy"];
-        QJsonValueRef jsonValueRef1 = rec["Mid"];
-        QJsonValueRef jsonValueRef2 = rec["Hard"];
-        records[0] = jsonValueRef0.toVariant().toLongLong();
-        records[1] = jsonValueRef1.toVariant().toLongLong();
-        records[2] = jsonValueRef2.toVariant().toLongLong();
-
+void InternetConnector::sendOrder(const QString &qstr) {
+    printf("在此时发送命令\n");
+    QJsonObject mas;
+    mas["Type"] = "order";
+    mas["Mas"] = qstr;
+    if(sendMassage(mas)){
+        printf("Send success!!\n");
     }
-    return records;
+    else{
+        printf("发送失败！？");
+    }
 }
+
+// void InternetConnector::sendGameOver(bool isWinner, int difficulty, qint64 timeUsed) {
+//     QJsonObject gameOver;
+//     gameOver["Type"] = "GameOver";
+//     gameOver["IsWinner"] = isWinner;
+//     gameOver["Difficulty"] = difficulty;
+//     gameOver["TimeUsed"] = timeUsed;
+//     stopListening();
+//     sendMassage(gameOver);
+// }
+
+// QVector<qint64> InternetConnector::requestPersonalRecord() {
+//     QJsonObject request;
+//     request["Type"] = "PersonalRecord";
+
+//     sendMassage(request);
+
+//     QVector<qint64> records(3);
+//     QJsonObject rec = receiveMassage();
+//     if(rec["Status"]=="Success"){
+//         QJsonValueRef jsonValueRef0 = rec["Easy"];
+//         QJsonValueRef jsonValueRef1 = rec["Mid"];
+//         QJsonValueRef jsonValueRef2 = rec["Hard"];
+//         records[0] = jsonValueRef0.toVariant().toLongLong();
+//         records[1] = jsonValueRef1.toVariant().toLongLong();
+//         records[2] = jsonValueRef2.toVariant().toLongLong();
+
+//     }
+//     return records;
+// }
 
 bool InternetConnector::sendMassage(const QJsonObject &json) {
     QJsonDocument doc(json);
@@ -242,14 +244,14 @@ QJsonObject InternetConnector::receiveMassage(int special) {
 
 void InternetConnector::startListening() {
     // 连接 readyRead 信号，确保监听服务器数据
-    connect(socket, &QTcpSocket::readyRead, this, &InternetConnector::getMoveMessage);
+    connect(socket, &QTcpSocket::readyRead, this, &InternetConnector::recvMessage);
 
     qDebug() << "Started listening for server messages.";
 }
 
 void InternetConnector::stopListening() {
     // 断开 readyRead 信号，停止监听
-    disconnect(socket, &QTcpSocket::readyRead, this, &InternetConnector::getMoveMessage);
+    disconnect(socket, &QTcpSocket::readyRead, this, &InternetConnector::recvMessage);
 
     qDebug() << "Stopped listening for server messages.";
 }
