@@ -42,28 +42,18 @@ void InternetConnector::recvMessage() {
     }
 
     QString type = message["Type"].toString();
-    if (type == "Move") {
-        int x1 = message["X1"].toInt();
-        int y1 = message["Y1"].toInt();
-        int x2 = message["X2"].toInt();
-        int y2 = message["Y2"].toInt();
 
-        qDebug() << "Move received from server:" << x1 << y1 << x2 << y2;
-
-        QPair<int ,int>first(x1,y1);
-        QPair<int ,int>second(x2,y2);
-
-        emit updateGraphicsSignal(first,second);
+    //   emit updateGraphicsSignal(first,second);
 
 
-    } else if (type == "GameOver") {
-        stopListening();
-        //emit opWin();//connect到gamePage生成multi部分
-        qDebug() << "Another person wins...";
-        // 处理游戏结束逻辑
-    } else {
-        qDebug() << "Unhandled message type:" << type;
-    }
+    // } else if (type == "GameOver") {
+    //     stopListening();
+    //     //emit opWin();//connect到gamePage生成multi部分
+    //     qDebug() << "Another person wins...";
+    //     // 处理游戏结束逻辑
+    // } else {
+    //     qDebug() << "Unhandled message type:" << type;
+    // }
 
 }
 
@@ -168,7 +158,7 @@ QJsonArray convertToQJsonArray(const QVector<QVector<int>> &matrix) {
 void InternetConnector::sendOrder(const QString &qstr) {
     printf("在此时发送命令\n");
     QJsonObject mas;
-    mas["Type"] = "order";
+    mas["Type"] = "Order";
     mas["Mas"] = qstr;
     if(sendMassage(mas)){
         printf("Send success!!\n");
@@ -219,7 +209,7 @@ QJsonObject InternetConnector::receiveMassage(int special) {
     QByteArray data;
     switch(special){
     case 0:
-        socket->waitForReadyRead(3000);
+        socket->waitForReadyRead(30000);
         data = socket->readAll();
         break;
     case 1:

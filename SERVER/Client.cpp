@@ -49,12 +49,12 @@ void ClientSession::client_handle_recv() {
             std::string buffer;
             size_t n = sock.recv(buffer);
             std::cout<<"本次链接ID:" << client_id << "接收数据长度:" << n << "\n";
-            if (buffer.size() > 10 * 1024) { // 限制10KB
-                std::cerr << "缓冲区溢出，强制关闭连接" << std::endl;
-                //break;
-            }
+            //if (buffer.size() > 10 * 1024) { // 限制10KB
+            //    std::cerr << "缓冲区溢出，强制关闭连接" << std::endl;
+            //    //break;
+            //}
             if (n > 0) {
-                recv_buffer.append(buffer, n); // 累积到缓冲区
+                recv_buffer+=buffer; // 累积到缓冲区
 
                 // 循环处理所有完整JSON
                 while (true) {
@@ -64,14 +64,39 @@ void ClientSession::client_handle_recv() {
                     // 提取并解析JSON
                     std::string json_str = recv_buffer.substr(0, json_end);
                     try {
-                        json json = json::parse(json_str);
+                        json json_mas = json::parse(json_str);
+                        CommandType cmd = getCommandType(json_mas["Type"]);
+                        json return_json = { {"Type", "Unkno"},
+                            {"Status", "Err"},
+                            {"Mass", "Null"}
+                        };
+                        switch (cmd) {
+                        case CommandType::Login:
+                            /////////////////////////////////////////////////////////////////id+password
+                            return_json["Type"] = "Login";
+                            return_json["Status"] = "Success";
+                            send_massage(return_json);
+                            break;
+                        case CommandType::Order:
+                            return_json["Type"] = "Order";
+                            return_json["Status"] = "Success";
+                            return_json["Mass"] = "a...b";
+                            ////////////////////////////////////
+                            break;
+                        case CommandType::Unknown:
+                            /////////////////////////////////////
+                            break;
+                        default:
+                            ////////////////////////////////////////////////
+                            break;
+                        }
                         //////////////////////////////process_data(json); // 替换为实际处理函数
                         recv_buffer.erase(0, json_end); // 移除已处理数据
                     }
                     catch (const nlohmann::json::parse_error& e) {
                         std::cerr << "JSON解析失败: " << e.what() << std::endl;
                         recv_buffer.clear(); // 异常时清空缓冲区
-                        break;
+                        //break;
                     }
                 }
             }
@@ -89,7 +114,6 @@ void ClientSession::client_handle_recv() {
         // 全局异常处理（如记录日志）
     }
 }
-
 void ClientSession::enqueue_message(const std::string& message) {
     {
         std::lock_guard<std::mutex> lock(send_mutex);
@@ -99,11 +123,18 @@ void ClientSession::enqueue_message(const std::string& message) {
 }
 
 bool ClientSession::send_massage(const json& data){
-    
-    // 序列化JSON并加入发送队列
-    std::string json_str = data.dump();
-    enqueue_message(json_str);
+    try {
+        // 序列化JSON并加入发送队列
+        std::string json_str = data.dump();
+        enqueue_message(json_str);
+    }
+    catch (std::exception& e) {
+        std::cerr << "Exception in ClientSession::send_massage(): " << e.what() << "\n";
+        return false;
+    }
+
     return true;
+
 }
 
 void ClientSession::client_handle_send() {
@@ -143,4 +174,17 @@ void ClientSession::client_handle_send() {
         is_active = false;
     }
 
+}
+ClientSession::CommandType ClientSession::getCommandType(const std::string& type) {
+    static const std::unordered_map<std::string, CommandType> typeMap = {
+        {"Login", CommandType::Login},
+        {"Order", CommandType::Order},
+        {"Unknown", CommandType::Unknown}
+    };
+
+    auto it = typeMap.find(type);
+    if (it != typeMap.end())
+        return it->second;
+    else
+        return CommandType::Unknown;
 }

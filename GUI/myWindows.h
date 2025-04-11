@@ -233,5 +233,6 @@ private:
     //新加部分
     InternetConnector *connector;
     friend class LoginWindow;
+    friend class MyMainWindow;
 };
 #endif // MYWINDOWS_H

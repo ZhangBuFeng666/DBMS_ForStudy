@@ -150,9 +150,6 @@ void MyMainWindow::newSession()
     scriptInput->clear();
     switchCmdMode();
 
-    // 可选：初始化后端连接
-    // initBackendConnection();
-
     // 状态栏提示
     statusBar()->showMessage(tr("New session created"), 2000);
 }
@@ -168,6 +165,8 @@ void MyMainWindow::handleCommand() {
             connector->sendOrder(cmd.trimmed());
         }
         cmdInput->clear();
+        QJsonObject response = connector->receiveMassage();
+
     }
 }
 
