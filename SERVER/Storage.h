@@ -1,5 +1,8 @@
 #pragma once
 #include <fstream>
+#include <vector>
+#include <map>
+#include <string>
 
 /*架构：DATA|-METADATA   |-用户属性表（定义，记录）
             |            |-数据库表（含数据库名、拥有的表的名）（定义，记录）
@@ -24,31 +27,23 @@
                          .
 */
 
-#pragma pack(push, 1) // 1字节对齐
-struct TableBlock {
-    char* name;
-    int32_t record_num;
-    int32_t field_num;
-    char* tdf_path;
-    char* trd_path;
-    std::string crtime;
-    std::string mtime;
-};
+/* 架构更新说明：
+   METADATA 目录结构：
+   |- DBATTER/
+      |- [数据库名]/
+         |- [表名].tdf    -- 字段名文件 (空格分隔)
+         |- [表名].tic    -- 字段类型文件 (空格分隔)
+         |- [表名].tid    -- 约束文件 (每行一个约束)
 
-struct FieldBlock {
-    int32_t order;
-    char name[128];
-    int32_t type;
-    int32_t param;
-    std::string mtime;
-    int32_t integrities; // 位掩码表示约束
-};
-
-#pragma pack(pop)
+         
+   COMMONDATA 目录结构：
+   |- [数据库名]/
+      |- [表名].trd       -- 表数据文件
+*/
 
 class FileManager {
 private:
-    const std::string METADATA_ROOT = "DATA/METADATA/";
+    const std::string METADATA_ROOT = "DATA/METADATA/DBATTER/"; // 数据库元数据路径
     const std::string COMMON_ROOT = "DATA/COMMONDATA/";
 
     // 写入二进制文件的模板函数，path是文件路径+名
@@ -67,8 +62,11 @@ private:
     int write_to_file(const std::string& path);
 
 public:
-    // 创建表结构
-    bool create_table(const std::string& dbName, const std::string& tableName);
+    // 增强的表创建接口
+    bool create_table(const std::string& dbName,
+        const std::string& tableName,
+        const std::vector<std::string>& fields,
+        const std::map<std::string, int>& constraints);
     // 删除表结构
     bool delete_table(const std::string& dbName, const std::string& tableName);
 
@@ -76,9 +74,7 @@ public:
     bool create_directory(const std::string& path);
     // 删除文件
     bool delete_file(const std::string& path);
-    //更新元数据
-    bool update_databaseCatalog(const std::string& dbName, const TableBlock& tb);
-    //删除元数据
-    bool remove_from_catalog(const std::string& dbName,const std::string& tableName);
+    
+    
 };
 

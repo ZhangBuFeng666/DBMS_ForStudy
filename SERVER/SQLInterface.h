@@ -12,14 +12,16 @@ using namespace std;
 class SQLInterface {
 private:
     FileManager fileManager;
-    const string METADATA_USER_ROOT = "DATA/METADATA/USERATTR/";
-    const string METADATA_DB_ROOT = "DATA/METADATA/DBATTR/";
+    // 修改后：
+    const string METADATA_USER_ROOT = "DATA/METADATA/USERATTER/"; // 用户元数据路径
+    const string METADATA_DB_ROOT = "DATA/METADATA/DBATTER/";     // 数据库元数据路径
     const string COMMONDATA_ROOT = "DATA/COMMONDATA/";
 
 public:
     bool create_user(const string& username, const string& password, const string& privilege);
     bool create_database(const string& username);
-    bool create_table(const string& dbName, const string& tableName);
+    bool create_table(const std::string& dbName, const std::string& tableName,
+        const vector<string>& fields, const map<string, int>& constraints);
     bool drop_table(const string& dbName, const string& tableName);
     bool alter_table_add_field(const string& dbName, const string& tableName, const string& fieldDefinition);
     string grant_privilege_sql(const string& username, const string& privilegeType);

@@ -6,6 +6,7 @@
 #include <vector>
 #include <regex>
 #include <sstream>
+#include <map>
 
 using namespace std;
 
@@ -17,6 +18,10 @@ struct SQLCommand {
     vector<string> values; // 插入时的字段值
     int rowIndex = -1;     // 用于 UPDATE 和 DELETE 的行号
     string newRow;         // 用于 UPDATE 的新行数据
+
+    // 新增字段定义和约束
+    vector<string> fieldDefinitions; // 字段定义（完整字符串）
+    map<string, int> constraints;     // 约束条件（类型 -> 字段位置）
 };
 
 // SQL 解析器类，用于将字符串形式的 SQL 转换为 SQLCommand 结构体
@@ -26,6 +31,9 @@ public:
 
 private:
     vector<string> split_values(const string& input);
+
+    // 新增解析字段定义的私有方法
+    void parse_field_definitions(const string& fieldDefs, SQLCommand& cmd);
 };
 
 #endif // SQLPARSER_H

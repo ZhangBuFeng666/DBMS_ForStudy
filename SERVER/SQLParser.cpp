@@ -17,11 +17,13 @@ SQLCommand SQLParser::parse(const string& sql) {
         return cmd;
     }
 
-    // 解析 CREATE TABLE 语句
-    regex createTableRegex(R"(CREATE TABLE (\w+);?)", regex::icase);
-    if (regex_match(sql, match, createTableRegex)) {
+    // 修改后的 CREATE TABLE 正则表达式
+    // 增强的 CREATE TABLE 解析
+    regex createTableRegex(R"(CREATE\s+TABLE\s+(\w+)\s*\((.+)\)\s*;?)", regex::icase);
+    if (regex_search(sql, match, createTableRegex)) {
         cmd.type = SQLCommand::CREATE;
         cmd.tableName = match[1];
+        parse_field_definitions(match[2], cmd); // 解析字段定义
         return cmd;
     }
 
@@ -69,4 +71,38 @@ vector<string> SQLParser::split_values(const string& input) {
         result.push_back(val);
     }
     return result;
+}
+
+void SQLParser::parse_field_definitions(const string& fieldDefs, SQLCommand& cmd) {
+    // 支持多行字段定义的正则表达式
+    regex fieldRegex(
+        R"(\s*(\w+)\s+)"          // 字段名
+        R"((\w+\(?\d*\)?))"       // 字段类型（支持CHAR(9)格式）
+        R"(\s*(PRIMARY\s+KEY)?)"  // 主键约束
+        R"(\s*,?)",               // 结尾逗号
+        regex::icase
+    );
+
+    sregex_iterator it(fieldDefs.begin(), fieldDefs.end(), fieldRegex);
+    sregex_iterator end;
+    int fieldIndex = 0;
+
+    for (; it != end; ++it) {
+        smatch match = *it;
+        string fullDef = match[0];
+
+        // 清理末尾逗号
+        if (!fullDef.empty() && fullDef.back() == ',') {
+            fullDef.pop_back();
+        }
+
+        cmd.fieldDefinitions.push_back(fullDef);
+
+        // 处理主键约束
+        if (match[3].matched) {
+            cmd.constraints["primary_key"] = fieldIndex;
+        }
+
+        fieldIndex++;
+    }
 }

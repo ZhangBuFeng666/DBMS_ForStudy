@@ -2,6 +2,11 @@
 #include"Tools.h"
 #include <Windows.h>
 #include <Shlwapi.h>
+#include <fstream>
+#include <vector>
+#include <map>
+#include <string>
+#include <regex>
 #pragma comment(lib, "Shlwapi.lib")
 
 using namespace std;
@@ -17,7 +22,8 @@ int FileManager::write_to_file(const std::string& path) {
     return file.good();
 }
 
-bool FileManager::create_table(const std::string& dbName, const std::string& tableName) {
+bool FileManager::create_table(const std::string& dbName, const std::string& tableName,
+    const vector<string>& fields, const map<string, int>& constraints) {
     // 1. 创建表描述文件
     std::string dbMetaPath = METADATA_ROOT + dbName + "/";
     create_directory(dbMetaPath);
@@ -26,16 +32,6 @@ bool FileManager::create_table(const std::string& dbName, const std::string& tab
     std::string dbDataPath = COMMON_ROOT + dbName + "/";
     create_directory(dbDataPath);
 
-    TableBlock tb{
-        const_cast<char*>(tableName.c_str()),
-        0,
-        0,
-        const_cast<char*>(dbMetaPath.c_str()),
-        const_cast<char*>(dbDataPath.c_str()),
-        tools::Timer::getCurrentTime(),
-        tools::Timer::getCurrentTime(),
-    };
-
     // 初始化空文件
     std::ofstream(dbMetaPath + tableName + ".tdf").close();
     std::ofstream(dbMetaPath + tableName + ".tic").close();
@@ -43,9 +39,27 @@ bool FileManager::create_table(const std::string& dbName, const std::string& tab
 
     std::ofstream(dbDataPath + tableName + ".trd").close();
 
+    // 写入.tdf文件（字段名）
+    ofstream tdfFile(dbMetaPath + tableName + ".tdf");
+    for (const auto& field : fields) tdfFile << field << " ";
 
-    // 3. 更新数据库元数据
-    return update_databaseCatalog(dbName, tb);
+    // 写入.tic文件（字段类型）
+    ofstream ticFile(dbMetaPath + tableName + ".tic");
+    regex typeExtract(R"((\w+)\s*\w*)"); // 提取类型部分
+    for (const auto& field : fields) {
+        smatch m;
+        regex_search(field, m, typeExtract);
+        ticFile << m[1] << " ";
+    }
+
+    // 写入.tid文件（约束）
+    ofstream tidFile(dbMetaPath + tableName + ".tid");
+    for (const auto& [type, pos] : constraints) {
+        tidFile << type << " " << pos << "\n";
+    }
+
+
+    return TRUE;
 }
 
 // 删除表结构
@@ -62,53 +76,35 @@ bool FileManager::delete_table(const std::string& dbName, const std::string& tab
 
 
     // 更新数据库元数据
-    return remove_from_catalog(dbName, tableName);
+    return TRUE;
 }
 bool FileManager::create_directory(const string& path) {
-    // 规范化路径处理
     char normalizedPath[MAX_PATH];
     PathCanonicalizeA(normalizedPath, path.c_str());
 
-    // 检查路径是否为空
     if (normalizedPath[0] == '\0') {
         throw runtime_error("Invalid directory path: " + path);
     }
 
-    // 将路径转化为可操作的字符串
     string pathStr = normalizedPath;
-
-    // 使用迭代来逐级创建目录
     size_t startPos = 0;
     while (startPos < pathStr.length()) {
-        // 获取当前目录的路径
-        size_t endPos = pathStr.find('\\/', startPos);
+        size_t endPos = pathStr.find_first_of("\\/", startPos); // 修复分隔符匹配逻辑
         if (endPos == string::npos) {
             endPos = pathStr.length();
         }
 
-        // 获取当前目录部分
         string subPath = pathStr.substr(0, endPos);
 
-        // 尝试创建目录
         if (!CreateDirectoryA(subPath.c_str(), nullptr)) {
             DWORD error = GetLastError();
             if (error != ERROR_ALREADY_EXISTS) {
-                // 如果目录不存在并且创建失败，抛出异常
-                if (error == ERROR_PATH_NOT_FOUND) {
-                    // 父目录不存在时，递归创建父目录
-                    if (startPos > 0) {
-                        string parentDir = pathStr.substr(0, pathStr.find_last_of('\\/', startPos));
-                        create_directory(parentDir); // 递归创建父目录
-                    }
-                }
                 throw runtime_error("Failed to create directory: " + subPath);
             }
         }
 
-        // 更新 startPos 以继续处理下一个目录部分
         startPos = endPos + 1;
     }
-
     return true;
 }
 
@@ -153,131 +149,4 @@ bool FileManager::delete_file(const string& path) {
     LocalFree(sd);
 
     return success;
-}
-
-#include <WinBase.h>
-#include <fileapi.h>
-#include <algorithm>
-#include <vector>
-
-bool FileManager::update_databaseCatalog(const string& dbName, const TableBlock& tb) {
-    const string catalogPath = METADATA_ROOT + dbName + ".db";
-
-    // 创建文件内存映射
-    HANDLE hFile = CreateFileA(catalogPath.c_str(), GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (hFile == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-
-    // 文件锁定（防止并发修改）
-    OVERLAPPED offset = { 0 };
-    LockFileEx(hFile, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &offset);
-
-    // 内存映射处理
-    HANDLE hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
-    LPVOID pData = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-
-    // 解析元数据结构
-    DWORD fileSize = GetFileSize(hFile, nullptr);
-    const int BLOCK_SIZE = sizeof(TableBlock);
-    vector<TableBlock> blocks(fileSize / BLOCK_SIZE);
-    memcpy(blocks.data(), pData, fileSize);
-
-    // 查找目标表记录并更新
-    auto it = find_if(blocks.begin(), blocks.end(),
-        [&](const TableBlock& tbItem) {
-            return strncmp(tbItem.name, tb.name, sizeof(TableBlock::name)) == 0;
-        });
-
-    // 如果找到了要更新的表，进行更新
-    if (it != blocks.end()) {
-        *it = tb;  // 更新记录
-
-        // 写入临时文件
-        const string tempPath = catalogPath + ".tmp";
-        HANDLE hTemp = CreateFileA(tempPath.c_str(), GENERIC_WRITE, 0, nullptr,
-            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        DWORD written = 0;
-        WriteFile(hTemp, blocks.data(), blocks.size() * BLOCK_SIZE, &written, nullptr);
-        CloseHandle(hTemp);
-
-        // 文件替换操作
-        ReplaceFileA(catalogPath.c_str(), tempPath.c_str(), nullptr,
-            REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr);
-    }
-
-    // 清理资源
-    UnmapViewOfFile(pData);
-    CloseHandle(hMap);
-    UnlockFileEx(hFile, 0, MAXDWORD, MAXDWORD, &offset);
-    CloseHandle(hFile);
-
-    // 如果成功找到并更新表，返回 true
-    return it != blocks.end();
-}
-
-bool FileManager::remove_from_catalog(const string& dbName, const string& tableName) {
-    const string catalogPath = METADATA_ROOT + dbName + ".db";
-
-    // 创建文件内存映射
-    HANDLE hFile = CreateFileA(catalogPath.c_str(), GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (hFile == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-
-    // 文件锁定（防止并发修改）
-    OVERLAPPED offset = { 0 };
-    LockFileEx(hFile, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &offset);
-
-    // 内存映射处理
-    HANDLE hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
-    LPVOID pData = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-
-    // 解析元数据结构
-    DWORD fileSize = GetFileSize(hFile, nullptr);
-    const int BLOCK_SIZE = sizeof(TableBlock);
-    vector<TableBlock> blocks(fileSize / BLOCK_SIZE);
-    memcpy(blocks.data(), pData, fileSize);
-
-    // 查找目标表记录
-    auto it = find_if(blocks.begin(), blocks.end(),
-        [&](const TableBlock& tb) {
-            return strncmp(tb.name, tableName.c_str(),
-                sizeof(TableBlock::name)) == 0;
-        });
-
-    // 原子化更新操作
-    if (it != blocks.end()) {
-        // 创建临时副本
-        vector<TableBlock> newBlocks;
-        newBlocks.reserve(blocks.size() - 1);
-        copy_if(blocks.begin(), blocks.end(),
-            back_inserter(newBlocks),
-            [&](const TableBlock& tb) { return &tb != &*it; });
-
-        // 写入临时文件
-        const string tempPath = catalogPath + ".tmp";
-        HANDLE hTemp = CreateFileA(tempPath.c_str(), GENERIC_WRITE, 0, nullptr,
-            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        DWORD written = 0;
-        WriteFile(hTemp, newBlocks.data(),
-            newBlocks.size() * BLOCK_SIZE, &written, nullptr);
-        CloseHandle(hTemp);
-
-        // 文件替换操作
-        ReplaceFileA(catalogPath.c_str(), tempPath.c_str(), nullptr,
-            REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr);
-    }
-
-    // 清理资源
-    UnmapViewOfFile(pData);
-    CloseHandle(hMap);
-    UnlockFileEx(hFile, 0, MAXDWORD, MAXDWORD, &offset);
-    CloseHandle(hFile);
-
-    return it != blocks.end();
 }
