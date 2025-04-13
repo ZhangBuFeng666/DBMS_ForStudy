@@ -66,6 +66,7 @@ void ClientSession::client_handle_recv() {
                     try {
                         json json_mas = json::parse(json_str);
                         CommandType cmd = getCommandType(json_mas["Type"]);
+                        //json_mas["Mass"] 
                         json return_json = { {"Type", "Unkno"},
                             {"Status", "Err"},
                             {"Mass", "Null"}
