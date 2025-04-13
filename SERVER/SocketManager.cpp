@@ -110,6 +110,10 @@ namespace mySocket {
         if (bytesReceived == SOCKET_ERROR) {
             throw std::system_error(WSAGetLastError(), std::system_category(), "Failed to receive data");
         }
+        else if (bytesReceived == 0) {
+            // 连接已关闭
+            return 0;
+        }
         //第一批写入
         buffer.append(tempBuffer, bytesReceived);
         dataSize += bytesReceived;

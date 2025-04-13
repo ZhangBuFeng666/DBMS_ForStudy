@@ -8,10 +8,10 @@ LoginWindow::LoginWindow(InternetConnector *connector,QWidget *parent) : QWidget
     setFixedSize(500, 250);
 
     // 加载背景图片
-    QPalette palette;
-    QPixmap background(":/images/images/Register.jpg");
-    palette.setBrush(QPalette::Window, background);
-    this->setPalette(palette);
+    // QPalette palette;
+    // QPixmap background(":/images/images/Register.jpg");
+    // palette.setBrush(QPalette::Window, background);
+    // this->setPalette(palette);
 
     QLabel* tip=new QLabel("(ID未注册将自动注册)",this);
     tip->setGeometry(180,50,150,20);
@@ -28,6 +28,314 @@ LoginWindow::LoginWindow(InternetConnector *connector,QWidget *parent) : QWidget
     loginButton->setGeometry(60,150,100,30);
 
     connect(loginButton, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
+}
+
+
+
+void MyMainWindow::createLayout() {
+    // 设置初始窗口大小为 800x600
+    resize(800, 600);
+
+    // 主分割器
+    QSplitter *mainSplitter = new QSplitter(Qt::Vertical);
+
+    // 结果展示区域（标签页）
+    resultTabs = new QTabWidget();
+    resultTabs->setTabsClosable(true);
+    resultTabs->setMovable(true);
+
+    // 输入区域
+    inputArea = new QWidget();
+    QVBoxLayout *inputLayout = new QVBoxLayout;
+
+    // 命令行模式组件
+    cmdInput = new QTextEdit();
+    cmdInput->setPlaceholderText("Enter command, use ';' to execute.");
+
+    // 模拟命令行行为
+    //connect(cmdInput, &QTextEdit::textChanged, this, &MyMainWindow::checkForCmdEnd);
+
+    // 脚本模式组件
+    scriptInput = new QTextEdit();
+    scriptInput->setPlaceholderText("Enter multiple commands (one per line)");
+    scriptInput->hide();
+
+    sendBtn = new QPushButton("运行");
+    sendBtn->hide();
+    saveBtn = new QPushButton("保存");
+    saveBtn->hide();
+
+    inputLayout->addWidget(cmdInput);
+    inputLayout->addWidget(scriptInput);
+    inputLayout->addWidget(sendBtn);
+    inputLayout->addWidget(saveBtn);
+
+    inputArea->setLayout(inputLayout);
+
+    // 添加到主分割器
+    mainSplitter->addWidget(inputArea);
+    mainSplitter->addWidget(resultTabs);
+
+    // 设置结果区域占下半部分，输入区域占上半部分
+    mainSplitter->setSizes(QList<int>() << 300 << 300);  // 让两部分等分，400:400比例
+
+    setCentralWidget(mainSplitter);
+}
+
+void MyMainWindow::createWindow() {
+    // 文件菜单
+    fileMenu = menuBar()->addMenu(tr("&文件"));
+    QAction *newScriptFile=fileMenu->addAction(tr("新建"));
+    QAction *openScriptFile=fileMenu->addAction("打开");
+    QAction *saveScriptFile=fileMenu->addAction("另存为");
+
+    connect(openScriptFile, &QAction::triggered, this, &MyMainWindow::openFile);
+    connect(saveScriptFile, &QAction::triggered, this, &MyMainWindow::saveFileAs);
+    connect(newScriptFile, &QAction::triggered, this, &MyMainWindow::newFile);
+    // 模式菜单
+    modeMenu = menuBar()->addMenu(tr("&模式"));
+    modeGroup = new QActionGroup(this);
+    QAction *cmdModeAction = modeMenu->addAction("命令行模式");
+    QAction *scriptModeAction = modeMenu->addAction("文本编辑模式");
+    cmdModeAction->setCheckable(true);
+    scriptModeAction->setCheckable(true);
+    modeGroup->addAction(cmdModeAction);
+    modeGroup->addAction(scriptModeAction);
+    cmdModeAction->setChecked(true);
+
+    connect(cmdModeAction, &QAction::triggered, this, &MyMainWindow::switchCmdMode);
+    connect(scriptModeAction, &QAction::triggered, this, &MyMainWindow::switchScriptMode);
+}
+
+void MyMainWindow::checkForCmdEnd() {
+    QString command = cmdInput->toPlainText().trimmed();
+    if (command.endsWith(";")) {
+        executeCmdOrder(command);
+    }
+}
+void MyMainWindow::saveFile(){
+    if(curFileName==""){
+        saveFileAs();
+    }else{
+        QFile file(curFileName);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            // 将 QTextEdit 中的内容写入文件
+            QTextStream out(&file);
+            out << scriptInput->toPlainText();
+            file.close();
+            fileChanged=false;
+        } else {
+            QMessageBox::warning(this, "错误", "内定文件不存在");
+        }
+    }
+}
+void MyMainWindow::executeScriptOrder() {
+    QString oriCommand = scriptInput->toPlainText().trimmed();
+    // 获取输入的命令并去掉首尾空格
+    oriCommand.replace("\n", " ");  // 替换换行符为空格
+    oriCommand = oriCommand.trimmed();  // （文本编辑模式）去除转化出来的尾部空格
+
+    if (oriCommand.endsWith(";")) {
+        oriCommand.chop(1);
+        QStringList commands = oriCommand.split(';');
+        for(QString& command:commands){
+            // 发送命令
+            connector->sendOrder(command);
+            QJsonObject response = connector->receiveMassage();  // 接收响应
+
+            // 获取命令的第一个单词作为标签页标题
+            QStringList commandParts = command.split(' ', Qt::SkipEmptyParts);  // 按空格分割命令
+            QString commandTitle = commandParts.isEmpty() ? "Unknown Command" : commandParts.first();  // 第一个单词作为标题
+
+            // 创建一个新的标签页显示命令执行结果
+            QWidget *resultWidget = new QWidget();
+            QVBoxLayout *resultLayout = new QVBoxLayout();
+
+            // 将响应内容显示在标签页中
+            QString responseText = QString(QJsonDocument(response).toJson(QJsonDocument::Indented));
+            resultLayout->addWidget(new QLabel(command));
+            resultLayout->addWidget(new QLabel("Response:"));
+            resultLayout->addWidget(new QLabel(responseText));  // 显示响应内容
+
+            resultWidget->setLayout(resultLayout);
+
+            // 将新标签页添加到 resultTabs，标题为命令的第一个单词
+            resultTabs->addTab(resultWidget, commandTitle);
+        }
+        // 清空输入框，准备下一个命令
+        cmdInput->clear();
+    }else if(oriCommand==""){
+        QMessageBox::warning(this, "空白", "请输入命令");
+    }else{
+        QMessageBox::warning(this, "非法结尾", "命令必须以\';\'结尾");
+    }
+}
+void MyMainWindow::executeCmdOrder(QString& command) {
+    // 获取输入的命令并去掉首尾空格
+    command.replace("\n", " ");  // 替换换行符为空格
+
+    // 发送命令
+            connector->sendOrder(command);
+            QJsonObject response = connector->receiveMassage();  // 接收响应
+
+            //标签页标题
+            static int pageID=1;
+            QString commandTitle = QString::number(pageID++);
+
+            // 创建一个新的标签页显示命令执行结果
+            QWidget *resultWidget = new QWidget();
+            QVBoxLayout *resultLayout = new QVBoxLayout();
+
+            // 将响应内容显示在标签页中
+            QString responseText = QString(QJsonDocument(response).toJson(QJsonDocument::Indented));
+            resultLayout->addWidget(new QLabel(command));
+            resultLayout->addWidget(new QLabel("Response:"));
+            resultLayout->addWidget(new QLabel(responseText));  // 显示响应内容
+
+            resultWidget->setLayout(resultLayout);
+
+            // 将新标签页添加到 resultTabs，标题为命令的第一个单词
+            resultTabs->addTab(resultWidget, commandTitle);
+
+        // 清空输入框，准备下一个命令
+        cmdInput->clear();
+
+}
+
+void MyMainWindow::switchCmdMode() {
+    currentMode = CMD_MODE;
+    scriptInput->hide();
+    sendBtn->hide();
+    saveBtn->hide();
+    cmdInput->show();
+    cmdInput->setFocus();
+}
+
+void MyMainWindow::switchScriptMode() {
+    currentMode = SCRIPT_MODE;
+    cmdInput->hide();
+    scriptInput->show();
+    sendBtn->show();
+    saveBtn->show();
+    scriptInput->setFocus();
+}
+
+void MyMainWindow::closeTab(int index) {
+    if(resultTabs->count() > 1) {
+        QWidget *tab = resultTabs->widget(index);
+        tab->deleteLater();
+        resultTabs->removeTab(index);
+    }
+}
+MyMainWindow::MyMainWindow(InternetConnector *connector,QWidget *parent)
+    : QMainWindow(parent), currentMode(CMD_MODE)
+{
+    this->connector = connector;
+    createWindow();
+    createLayout();
+
+    // 连接信号槽
+    connect(cmdInput,&QTextEdit::textChanged,this,&MyMainWindow::checkForCmdEnd);
+    connect(sendBtn, &QPushButton::clicked, this, &MyMainWindow::executeScriptOrder);
+    connect(saveBtn, &QPushButton::clicked, this, &MyMainWindow::saveFile);
+    connect(resultTabs, &QTabWidget::tabCloseRequested, this, &MyMainWindow::closeTab);
+}
+
+
+
+MainController::MainController() {
+
+    connector = new InternetConnector("127.0.0.1",6666);
+    loginWindow = new LoginWindow(connector);
+    mainWindow = new MyMainWindow(connector);
+    // selectModeWindow = new SelectModeWindow;
+    // helpWindow = new HelpWindow;
+    // recordWindow = new RecordWindow(connector);
+
+
+    // 初始显示登录窗口
+    loginWindow->show();
+
+    // 界面切换信号槽连接
+    connect(loginWindow, &LoginWindow::loginSuccess, this, &MainController::showMyMainWindow);
+    // connect(menuWindow, &MyMainWindow::selectMode, this, &MainController::showSelectModeWindow);
+    // connect(selectModeWindow, &SelectModeWindow::startGame, this, &MainController::startGameWindow);
+    // connect(menuWindow, &MyMainWindow::askHelp, this, &MainController::showHelpWindow);
+    // connect(menuWindow, &MyMainWindow::viewRecords, this, &MainController::showRecordWindow);
+}
+
+MainController::~MainController() {
+    delete loginWindow;
+    delete mainWindow;
+    // delete selectModeWindow;
+}
+
+void MainController::hideAllWindows() {
+    loginWindow->hide();
+    mainWindow->hide();
+    // selectModeWindow->hide();
+}
+
+void MainController::showMyMainWindow() {
+    hideAllWindows();
+    mainWindow->show();
+}
+
+void MyMainWindow::openFile() {
+    // 弹出文件选择对话框
+    QString fileName = QFileDialog::getOpenFileName(this, "打开文件", "", "SQL Files (*.sql);;Text Files (*.txt);;All Files (*)");
+
+    if (!fileName.isEmpty()) {
+        QFile file(fileName);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            //保存临时文件路径
+            curFileName=fileName;
+            // 读取文件内容到 QTextEdit
+            QTextStream in(&file);
+            scriptInput->setPlainText(in.readAll());
+            file.close();
+        } else {
+            QMessageBox::warning(this, "错误", "无法打开文件");
+        }
+    }
+}
+void MyMainWindow::saveFileAs() {
+    // 弹出保存文件对话框，默认保存为 .sql 文件
+    QString fileName = QFileDialog::getSaveFileName(this, "另存为", "", "SQL Files (*.sql);;All Files (*)");
+
+    if (!fileName.isEmpty()) {
+        QFile file(fileName);
+        //保存临时文件路径
+        curFileName=fileName;
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            // 将 QTextEdit 中的内容写入文件
+            QTextStream out(&file);
+            out << scriptInput->toPlainText();
+            file.close();
+        } else {
+            QMessageBox::warning(this, "错误", "无法保存文件");
+        }
+    }
+}
+void MyMainWindow::newFile() {
+    // 如果当前有文件内容，询问用户是否保存
+    if (fileChanged) {
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, "保存当前文件", "是否保存当前文件？",
+                                      QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+
+        if (reply == QMessageBox::Yes) {
+            saveFileAs(); // 调用另存为功能保存文件
+        } else if (reply == QMessageBox::Cancel) {
+            return; // 如果选择取消，则不进行新建操作
+        }
+    }
+
+    // 清空文本框内容，准备新建文件
+    scriptInput->clear();
+
+    // 可选：为新文件设置一个默认的文本（例如 "新建文件.sql"）
+    scriptInput->setPlainText("-- 请输入SQL语句");
 }
 
 // MyMainWindow::MyMainWindow(InternetConnector *connector,QWidget *parent) : QWidget(parent)  {
@@ -58,124 +366,30 @@ LoginWindow::LoginWindow(InternetConnector *connector,QWidget *parent) : QWidget
 //     connect(viewRecordsButton, &QPushButton::clicked, this, &MyMainWindow::onViewRecordsClicked);
 //     connect(exitButton, &QPushButton::clicked, qApp, &QApplication::quit);
 // }
+// void MyMainWindow::newSession()
+// {
+//     // 清理所有结果标签页
+//     while (resultTabs->count() > 0) {
+//         QWidget* tab = resultTabs->widget(0);
+//         tab->deleteLater();
+//         resultTabs->removeTab(0);
+//     }
 
-void MyMainWindow::createLayout() {
-    // 主分割器
-    QSplitter *mainSplitter = new QSplitter(Qt::Vertical);
+//     // 创建初始标签页
+//     QTextEdit* defaultResult = new QTextEdit();
+//     defaultResult->setReadOnly(true);
+//     resultTabs->addTab(defaultResult, tr("Session 1"));
+//     resultTabs->setCurrentIndex(0);
 
-    // 结果展示区域（标签页）
-    resultTabs = new QTabWidget();
-    resultTabs->setTabsClosable(true);
-    resultTabs->setMovable(true);
+//     // 重置输入区域
+//     cmdInput->clear();
+//     scriptInput->clear();
+//     switchCmdMode();
 
-    // 输入区域
-    inputArea = new QWidget();
-    QVBoxLayout *inputLayout = new QVBoxLayout;
+//     // 状态栏提示
+//     statusBar()->showMessage(tr("New session created"), 2000);
+// }
 
-    // 命令行模式组件
-    cmdInput = new QLineEdit();
-    cmdInput->setPlaceholderText("Enter command (use ; to separate multiple commands)");
-
-    // 脚本模式组件
-    scriptInput = new QTextEdit();
-    scriptInput->setPlaceholderText("Enter multiple commands (one per line)");
-    scriptInput->hide();
-
-    submitBtn = new QPushButton("Execute Script");
-    submitBtn->hide();
-
-    inputLayout->addWidget(cmdInput);
-    inputLayout->addWidget(scriptInput);
-    inputLayout->addWidget(submitBtn);
-    inputArea->setLayout(inputLayout);
-
-    mainSplitter->addWidget(resultTabs);
-    mainSplitter->addWidget(inputArea);
-    setCentralWidget(mainSplitter);
-}
-void MyMainWindow::createMenu() {
-    // 文件菜单
-    fileMenu = menuBar()->addMenu(tr("&File"));
-    newSessionAction = fileMenu->addAction(tr("New Session"));
-    connect(newSessionAction, &QAction::triggered, this, &MyMainWindow::newSession);
-
-    // 模式菜单
-    modeMenu = menuBar()->addMenu(tr("&Mode"));
-    modeGroup = new QActionGroup(this);
-    QAction *cmdModeAction = modeMenu->addAction("Command Line Mode");
-    QAction *scriptModeAction = modeMenu->addAction("Script Mode");
-    cmdModeAction->setCheckable(true);
-    scriptModeAction->setCheckable(true);
-    modeGroup->addAction(cmdModeAction);
-    modeGroup->addAction(scriptModeAction);
-    cmdModeAction->setChecked(true);
-
-    connect(cmdModeAction, &QAction::triggered, this, &MyMainWindow::switchCmdMode);
-    connect(scriptModeAction, &QAction::triggered, this, &MyMainWindow::switchScriptMode);
-}
-
-void MyMainWindow::switchCmdMode() {
-    currentMode = CMD_MODE;
-    scriptInput->hide();
-    submitBtn->hide();
-    cmdInput->show();
-    cmdInput->setFocus();
-}
-
-void MyMainWindow::switchScriptMode() {
-    currentMode = SCRIPT_MODE;
-    cmdInput->hide();
-    scriptInput->show();
-    submitBtn->show();
-    scriptInput->setFocus();
-}
-
-void MyMainWindow::newSession()
-{
-    // 清理所有结果标签页
-    while (resultTabs->count() > 0) {
-        QWidget* tab = resultTabs->widget(0);
-        tab->deleteLater();
-        resultTabs->removeTab(0);
-    }
-
-    // 创建初始标签页
-    QTextEdit* defaultResult = new QTextEdit();
-    defaultResult->setReadOnly(true);
-    resultTabs->addTab(defaultResult, tr("Session 1"));
-    resultTabs->setCurrentIndex(0);
-
-    // 重置输入区域
-    cmdInput->clear();
-    scriptInput->clear();
-    switchCmdMode();
-
-    // 状态栏提示
-    statusBar()->showMessage(tr("New session created"), 2000);
-}
-
-void MyMainWindow::handleCommand() {
-    QString input = cmdInput->text().trimmed();
-    if(input.isEmpty()) return;
-
-    // 命令行模式处理
-    if(currentMode == CMD_MODE && input.contains(';')) {
-        QStringList commands = input.split(';', Qt::SkipEmptyParts);
-        for(const QString &cmd : commands) {
-            connector->sendOrder(cmd.trimmed());
-        }
-        cmdInput->clear();
-        QJsonObject response = connector->receiveMassage();
-
-    }
-}
-
-void MyMainWindow::executeScript() {
-    QStringList commands = scriptInput->toPlainText().split('\n', Qt::SkipEmptyParts);
-    for(const QString &cmd : commands) {
-        connector->sendOrder(cmd.trimmed());
-    }
-}
 
 // void MyMainWindow::sendToServer(const QString &cmd) {
 //     // 创建新标签页
@@ -189,26 +403,6 @@ void MyMainWindow::executeScript() {
 //     //     resultView->append("Result for: " + cmd + "\n" + QString::number(qrand()));
 //     // });
 // }
-
-void MyMainWindow::closeTab(int index) {
-    if(resultTabs->count() > 1) {
-        QWidget *tab = resultTabs->widget(index);
-        tab->deleteLater();
-        resultTabs->removeTab(index);
-    }
-}
-MyMainWindow::MyMainWindow(InternetConnector *connector,QWidget *parent)
-    : QMainWindow(parent), currentMode(CMD_MODE)
-{
-    this->connector = connector;
-    createMenu();
-    createLayout();
-
-    // 连接信号槽
-    connect(cmdInput, &QLineEdit::returnPressed, this, &MyMainWindow::handleCommand);
-    connect(submitBtn, &QPushButton::clicked, this, &MyMainWindow::executeScript);
-    connect(resultTabs, &QTabWidget::tabCloseRequested, this, &MyMainWindow::closeTab);
-}
 
 // SelectModeWindow::SelectModeWindow(QWidget *parent) : QWidget(parent) {
 //     setWindowTitle("模式选择");
@@ -297,44 +491,6 @@ MyMainWindow::MyMainWindow(InternetConnector *connector,QWidget *parent)
 //         recordText->setText("服务器异常");
 //     }
 // }
-
-MainController::MainController() {
-
-    connector = new InternetConnector("127.0.0.1",6666);
-    loginWindow = new LoginWindow(connector);
-    mainWindow = new MyMainWindow(connector);
-    // selectModeWindow = new SelectModeWindow;
-    // helpWindow = new HelpWindow;
-    // recordWindow = new RecordWindow(connector);
-
-
-    // 初始显示登录窗口
-    loginWindow->show();
-
-    // 界面切换信号槽连接
-    connect(loginWindow, &LoginWindow::loginSuccess, this, &MainController::showMyMainWindow);
-    // connect(menuWindow, &MyMainWindow::selectMode, this, &MainController::showSelectModeWindow);
-    // connect(selectModeWindow, &SelectModeWindow::startGame, this, &MainController::startGameWindow);
-    // connect(menuWindow, &MyMainWindow::askHelp, this, &MainController::showHelpWindow);
-    // connect(menuWindow, &MyMainWindow::viewRecords, this, &MainController::showRecordWindow);
-}
-
-MainController::~MainController() {
-    delete loginWindow;
-    delete mainWindow;
-    // delete selectModeWindow;
-}
-
-void MainController::hideAllWindows() {
-    loginWindow->hide();
-    mainWindow->hide();
-    // selectModeWindow->hide();
-}
-
-void MainController::showMyMainWindow() {
-    hideAllWindows();
-    mainWindow->show();
-}
 
 // void MainController::showSelectModeWindow() {
 //     hideAllWindows();

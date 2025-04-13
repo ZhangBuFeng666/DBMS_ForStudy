@@ -11,11 +11,13 @@ CONFIG += c++17
 SOURCES += \
     InternetConnector.cpp \
     main.cpp \
-    myWindows.cpp
+    myWindows.cpp \
+    tools.cpp
 
 HEADERS += \
     InternetConnector.h \
-    myWindows.h
+    myWindows.h \
+    tools.h
 
 FORMS +=
 

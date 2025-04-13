@@ -14,6 +14,7 @@ class InternetConnector : public QObject{
 
     Q_OBJECT
     //friend class MultiGame;
+    friend class MyMainWindow;
 
 public:
     InternetConnector(const QString &host, quint16 port);
@@ -38,11 +39,11 @@ public:
     // 请求个人记录
     // QVector<qint64> requestPersonalRecord();
 
-    //接收并显示数据
+    //外部用接收并显示数据
     void recvMessage();
 
-    void stopListening();
-    void startListening();
+    // void stopListening();
+    // void startListening();
 
 
 signals:
