@@ -75,7 +75,6 @@ void ClientSession::client_handle_recv() {
                             /////////////////////////////////////////////////////////////////id+password
                             return_json["Type"] = "Login";
                             return_json["Status"] = "Success";
-                            send_massage(return_json);
                             break;
                         case CommandType::Order:
                             return_json["Type"] = "Order";
@@ -90,6 +89,7 @@ void ClientSession::client_handle_recv() {
                             ////////////////////////////////////////////////
                             break;
                         }
+                        send_massage(return_json);
                         //////////////////////////////process_data(json); // 替换为实际处理函数
                         recv_buffer.erase(0, json_end); // 移除已处理数据
                     }
@@ -101,8 +101,8 @@ void ClientSession::client_handle_recv() {
                 }
             }
             else if (n == 0) {
-                std::cout << "ClientSession:内层socket阻塞异常退出" << std::endl;
-                //break;
+                std::cout << "ClientSession:连接中断" << std::endl;
+                break;
             }
             else {
                 //////////////////////////////handle_error(); // 处理错误（如连接重置）
