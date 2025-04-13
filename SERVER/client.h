@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include<thread>
 
+
 class ClientSession {
 public:
     // 构造函数（接管socket和线程）
@@ -22,6 +23,9 @@ public:
     // 析构函数（确保线程安全退出）
     ~ClientSession();
 
+    //（原始）外部接口
+    bool send_massage(const nlohmann::json& data);
+
     // 获取最后活动时间
     auto get_last_active() const { return last_active; }
 
@@ -30,13 +34,12 @@ public:
 
     void start(ThreadPool& pool);
     void stop(std::thread worker_thread);
-    bool send_massage(const nlohmann::json& data);//外部接口
 
 private:
     // 客户端对该链接处理逻辑
-    void client_handle_recv();//
+    void client_handle_recv();
     void enqueue_message(const std::string& message);//（send_massage调用）将待发送信息保存到队列
-    void client_handle_send();//（线程持有）处理发送队列
+    void client_handle_send();//（线程持有）（内部调用）处理发送队列
 
     mySocket::DBSocket sock;            // 套接字
     int client_id;                      // 客户端ID
@@ -52,6 +55,12 @@ private:
 
     std::chrono::steady_clock::time_point last_active; // 最后活动时间
 
+    enum class CommandType {
+        Login,
+        Order,
+        Unknown
+};
+    CommandType getCommandType(const std::string& type);
     //std::thread worker_thread_recv;   // 专属处理接收线程
     //std::thread worker_thread_send;   // 专属处理发送线程
 };
