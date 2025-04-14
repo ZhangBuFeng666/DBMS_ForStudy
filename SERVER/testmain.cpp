@@ -1,10 +1,12 @@
 #include <iostream>
 #include "SQLParser.h"
 #include "SQLInterface.h"
-
 using namespace std;
 
+
 void print_values(const vector<string>& values) {
+    using namespace std;
+
     cout << "解析值: ";
     for (const auto& v : values) {
         cout << "[" << v << "] ";
@@ -13,6 +15,10 @@ void print_values(const vector<string>& values) {
 }
 
 void print_metadata(const string& dbName, const string& tableName) {
+
+    using namespace std;
+
+
     cout << "\n=== 表元数据验证 ===" << endl;
     ifstream tdf("DATA/METADATA/DBATTER/" + dbName + "/" + tableName + ".tdf");
     ifstream tic("DATA/METADATA/DBATTER/" + dbName + "/" + tableName + ".tic");
@@ -34,6 +40,10 @@ void print_metadata(const string& dbName, const string& tableName) {
 }
 
 int main() {
+
+    using namespace std;
+
+
     SQLInterface db;
     SQLParser parser;
 

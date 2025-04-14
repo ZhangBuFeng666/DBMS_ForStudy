@@ -6,7 +6,8 @@
 #include <vector>
 #include <sstream>
 #include <regex>
-#include "SQLInterface.h"  
+
+using namespace std;
 
 // Ensure the constants are defined and accessible in this file  
 const string METADATA_USER_ROOT = "DATA/METADATA/USERATTER/"; // ÓÃ»§ÔªÊý¾ÝÂ·¾¶  
@@ -14,9 +15,13 @@ const string METADATA_DB_ROOT = "DATA/METADATA/DBATTER/";     // Êý¾Ý¿âÔªÊý¾ÝÂ·¾
 const string COMMONDATA_ROOT = "DATA/COMMONDATA/";  
 
 // The rest of the code remains unchanged
-using namespace std;
+//using namespace std;
 
 bool SQLInterface::create_user(const string& username, const string& password, const string& privilege) {
+
+    using namespace std;
+
+
     // È·±£ÓÃ»§Ä¿Â¼´æÔÚ
     if (!fileManager.create_directory(METADATA_USER_ROOT)) {
         return false;
@@ -56,6 +61,10 @@ bool SQLInterface::create_user(const string& username, const string& password, c
 }
 
 bool SQLInterface::create_database(const string& username) {
+
+    using namespace std;
+
+
     string dbMetaPath = METADATA_DB_ROOT + username + "/";
     string dbDataPath = COMMONDATA_ROOT + username + "/";
     return fileManager.create_directory(dbMetaPath) && fileManager.create_directory(dbDataPath);

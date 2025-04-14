@@ -9,10 +9,15 @@
 #include <regex>
 #pragma comment(lib, "Shlwapi.lib")
 
+
 using namespace std;
+
 //使用ASCII编码
 
-int FileManager::write_to_file(const std::string& path) {
+int FileManager::write_to_file(const std::string& path) 
+{
+	using namespace std;
+
     std::ifstream file0(path);
     if (file0.good()) {
         return -1;
@@ -24,6 +29,9 @@ int FileManager::write_to_file(const std::string& path) {
 
 bool FileManager::create_table(const std::string& dbName, const std::string& tableName,
     const vector<string>& fields, const map<string, int>& constraints) {
+    using namespace std;
+
+
     // 1. 创建表描述文件
     std::string dbMetaPath = METADATA_ROOT + dbName + "/";
     create_directory(dbMetaPath);
@@ -64,6 +72,10 @@ bool FileManager::create_table(const std::string& dbName, const std::string& tab
 
 // 删除表结构
 bool FileManager::delete_table(const std::string& dbName, const std::string& tableName) {
+
+    using namespace std;
+
+
     std::string dbDataPath = COMMON_ROOT + dbName + "/";
     std::string dbMetaPath = METADATA_ROOT + dbName + "/";
 
@@ -79,6 +91,10 @@ bool FileManager::delete_table(const std::string& dbName, const std::string& tab
     return TRUE;
 }
 bool FileManager::create_directory(const string& path) {
+
+    using namespace std;
+
+
     char normalizedPath[MAX_PATH];
     PathCanonicalizeA(normalizedPath, path.c_str());
 
@@ -112,6 +128,9 @@ bool FileManager::create_directory(const string& path) {
 #include <Aclapi.h>
 
 bool FileManager::delete_file(const string& path) {
+
+    using namespace std;
+
     // 获取文件属性
     DWORD attrs = GetFileAttributesA(path.c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) {

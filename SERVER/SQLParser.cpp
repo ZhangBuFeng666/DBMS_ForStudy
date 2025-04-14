@@ -1,7 +1,14 @@
 #include "SQLParser.h"
 
+using namespace std;
+
+
 // ½âÎö SQL ×Ö·û´®Îª SQLCommand
 SQLCommand SQLParser::parse(const string& sql) {
+
+    using namespace std;
+
+
     SQLCommand cmd;
     cmd.type = SQLCommand::UNKNOWN;
 
