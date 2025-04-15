@@ -88,7 +88,7 @@ void SQLParser::parse_field_definitions(const string& fieldDefs, SQLCommand& cmd
     cleanedDefs = regex_replace(cleanedDefs, regex(R"(\s*,\s*)"), ", ");
 
     regex fieldRegex(
-        R"(\s*(\w+)\s+)"            // 字段名 (捕获组 1)杀
+        R"(\s*(\w+)\s+)"            // 字段名 (捕获组 1)
         R"((\w+(?:\(\d+\))?))"        // 字段类型（支持CHAR(9)格式） (捕获组 2)
         R"(\s*(PRIMARY\s+KEY)?)"        // 主键约束 (捕获组 3)
         R"(\s*,?\s*)",                    // 结尾逗号
@@ -101,7 +101,7 @@ void SQLParser::parse_field_definitions(const string& fieldDefs, SQLCommand& cmd
 
     for (; it != end; ++it) {
         smatch match = *it;
-        if (match.size() == 5) {
+        if (match.size() >= 4) {// 这里
             std::string fieldName = match[1].str();
             std::string fieldType = match[2].str();
             cmd.fieldDefinitionsWithType.push_back({ fieldName, fieldType });

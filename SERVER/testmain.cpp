@@ -86,7 +86,43 @@ int main() {
         );
     )";
 
+
+    // 在调用 parse 之后
     SQLCommand createCmd = parser.parse(createTableSQL);
+
+    // 打印字段定义
+    std::cout << "Field Definitions:" << std::endl;
+    for (const auto& field : createCmd.fieldDefinitionsWithType) {
+        std::cout << "  " << field.first << " : " << field.second << std::endl;
+    }
+
+    // 完整示例：
+    std::cout << "\n=== 打印字段定义 ===" << std::endl;
+    if (createCmd.type == SQLCommand::CREATE) {
+        std::cout << "表名: " << createCmd.tableName << std::endl;
+        std::cout << "字段列表:" << std::endl;
+
+        for (size_t i = 0; i < createCmd.fieldDefinitionsWithType.size(); ++i) {
+            const auto& field = createCmd.fieldDefinitionsWithType[i];
+            std::cout << "  [" << i << "] " << field.first
+                << " (类型: " << field.second << ")";
+
+            // 如果有主键约束也打印出来
+            auto it = createCmd.constraints.find("primary_key");
+            if (it != createCmd.constraints.end() && it->second == static_cast<int>(i)) {
+                std::cout << " [PRIMARY KEY]";
+            }
+
+            std::cout << std::endl;
+        }
+    }
+    else {
+        std::cout << "不是CREATE TABLE语句" << std::endl;
+    }
+
+
+
+
     if (createCmd.type == SQLCommand::CREATE) {
         if (db.create_table(dbName,
             createCmd.tableName,

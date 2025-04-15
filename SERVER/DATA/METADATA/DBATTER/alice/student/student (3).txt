@@ -1,0 +1,4 @@
+sno
+sname
+age
+gender

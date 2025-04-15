@@ -1,0 +1,4 @@
+INT
+CHAR(20)
+INT
+CHAR(1)
