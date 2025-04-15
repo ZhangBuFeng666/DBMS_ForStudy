@@ -11,8 +11,9 @@ SQLCommand SQLParser::parse(const string& sql) {
 
     smatch match;
 
+
     // 解析 INSERT 语句
-    regex insertRegex(R"(INSERT INTO (\w+) VALUES \((.*?)\);?)", regex::icase);
+    regex insertRegex(R"(INSERT\s+INTO\s+(\w+)\s+VALUES\s*\(\s*(.*?)\s*\)\s*;?)", regex::icase);
     if (regex_match(sql, match, insertRegex)) {
         cmd.type = SQLCommand::INSERT;
         cmd.tableName = match[1];
@@ -62,18 +63,23 @@ SQLCommand SQLParser::parse(const string& sql) {
     return cmd; // 如果未匹配任何语句，则类型为 UNKNOWN
 }
 
-// 分割 INSERT 语句中的值列表
 vector<string> SQLParser::split_values(const string& input) {
     vector<string> result;
-    regex valueRegex(R"((?:'[^']*')|(?:[^,]+))");
+    // 改进后的正则表达式：匹配带引号的字符串或非逗号内容，并去除前后空格
+    regex valueRegex(R"(\s*((?:'[^']*')|(?:[^,'\s][^,]*[^,'\s]|[^,'\s]))\s*,?)");
     auto begin = sregex_iterator(input.begin(), input.end(), valueRegex);
     auto end = sregex_iterator();
+
     for (auto it = begin; it != end; ++it) {
-        string val = it->str();
-        if (val.front() == '\'' && val.back() == '\'') {
-            val = val.substr(1, val.size() - 2); // 去除单引号
+        smatch match = *it;
+        if (match.size() > 1) {  // match[1] 是去除了前后空格的值
+            string val = match[1].str();
+            // 去除字符串值的引号
+            if (val.front() == '\'' && val.back() == '\'') {
+                val = val.substr(1, val.size() - 2);
+            }
+            result.push_back(val);
         }
-        result.push_back(val);
     }
     return result;
 }
@@ -101,7 +107,7 @@ void SQLParser::parse_field_definitions(const string& fieldDefs, SQLCommand& cmd
 
     for (; it != end; ++it) {
         smatch match = *it;
-        if (match.size() >= 4) {// 这里
+        if (match.size() >= 4) {
             std::string fieldName = match[1].str();
             std::string fieldType = match[2].str();
             cmd.fieldDefinitionsWithType.push_back({ fieldName, fieldType });

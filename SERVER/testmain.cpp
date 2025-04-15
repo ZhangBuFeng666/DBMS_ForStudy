@@ -1,9 +1,9 @@
 #include <iostream>
-#include "SQLParser.h"
-#include "SQLInterface.h"
 #include <fstream>
 #include <vector>
 #include <string>
+#include "SQLParser.h"
+#include "SQLInterface.h"
 
 using namespace std;
 

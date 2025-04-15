@@ -127,17 +127,25 @@ vector<string> split_values(const string& input) {
 // 新增辅助函数：解析字段类型
 vector<string> parseFieldTypes(const string& dbName, const string& tableName) {
     vector<string> types;
-    string ticPath = METADATA_DB_ROOT + dbName + "/" + tableName + "/" + tableName + ".tic"; // 修改路径
+    string ticPath = METADATA_DB_ROOT + dbName + "/" + tableName + "/" + tableName + ".tic";
     ifstream ticFile(ticPath);
-    string line;
 
-    if (getline(ticFile, line)) {
-        istringstream iss(line);
-        string type;
-        while (iss >> type) {
-            types.push_back(type);
+    if (!ticFile.is_open()) {
+        cerr << "Error: Cannot open .tic file for table " << tableName << endl;
+        return {};
+    }
+
+    string line;
+    while (getline(ticFile, line)) {  // 逐行读取
+        if (!line.empty()) {          // 忽略空行
+            types.push_back(line);
         }
     }
+
+    if (types.empty()) {
+        cerr << "Warning: No field types found in " << ticPath << endl;
+    }
+
     return types;
 }
 

@@ -37,7 +37,7 @@ bool FileManager::create_table(const std::string& dbName, const std::string& tab
 
     // 构建元数据和数据文件路径
     std::string dbMetaPath = METADATA_ROOT + dbName + "/";
-    std::string dbDataPath = COMMON_ROOT + "";
+    std::string dbDataPath = COMMON_ROOT ;
     std::string tableMetaPath = dbMetaPath + tableName + "/"; // 为表创建单独的目录
     std::string tableDataPath = dbDataPath ;
 
@@ -142,10 +142,10 @@ bool FileManager::create_table(const std::string& dbName, const std::string& tab
 bool FileManager::delete_table(const std::string& dbName, const std::string& tableName) {
     using namespace std;
 
-    std::string dbDataPath = COMMON_ROOT + dbName + "/";
-    std::string dbMetaPath = METADATA_ROOT ;
-    std::string tableMetaPath = dbMetaPath + tableName + "/";
-    std::string tableDataPath = dbDataPath + "/";
+    std::string dbMetaPath = METADATA_ROOT + dbName + "/";
+    std::string dbDataPath = COMMON_ROOT;
+    std::string tableMetaPath = dbMetaPath + tableName + "/"; // 为表创建单独的目录
+    std::string tableDataPath = dbDataPath;
 
     // 删除所有关联文件
     delete_file(tableMetaPath + tableName + ".tdf");
@@ -155,7 +155,6 @@ bool FileManager::delete_table(const std::string& dbName, const std::string& tab
 
     // 删除表目录（如果存在且为空）
     filesystem::remove(tableMetaPath);
-    filesystem::remove(tableDataPath);
 
     // 更新数据库元数据（当前未实现）
     return true;

@@ -1,4 +1,0 @@
-sno
-sname
-age
-gender
