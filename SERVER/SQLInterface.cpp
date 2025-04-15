@@ -2,25 +2,20 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
-
 #include <vector>
 #include <sstream>
 #include <regex>
 
 using namespace std;
 
-// Ensure the constants are defined and accessible in this file  
-const string METADATA_USER_ROOT = "DATA/METADATA/USERATTER/"; // 用户元数据路径  
-const string METADATA_DB_ROOT = "DATA/METADATA/DBATTER/";     // 数据库元数据路径  
-const string COMMONDATA_ROOT = "DATA/COMMONDATA/";  
+// 确保常量已在此文件中定义和可访问
+const string METADATA_USER_ROOT = "DATA/METADATA/USERATTER/"; // 用户元数据路径
+const string METADATA_DB_ROOT = "DATA/METADATA/DBATTER/";     // 数据库元数据路径
+const string COMMONDATA_ROOT = "DATA/COMMONDATA/";
 
-// The rest of the code remains unchanged
-//using namespace std;
-
+// 创建新用户
 bool SQLInterface::create_user(const string& username, const string& password, const string& privilege) {
-
     using namespace std;
-
 
     // 确保用户目录存在
     if (!fileManager.create_directory(METADATA_USER_ROOT)) {
@@ -60,21 +55,30 @@ bool SQLInterface::create_user(const string& username, const string& password, c
     return outFile.good();
 }
 
+// 为指定用户创建数据库
 bool SQLInterface::create_database(const string& username) {
-
     using namespace std;
 
-
     string dbMetaPath = METADATA_DB_ROOT + username + "/";
-    string dbDataPath = COMMONDATA_ROOT + username + "/";
+    string dbDataPath = COMMONDATA_ROOT;
+
+    // 检查数据库是否已存在
+    if (filesystem::exists(dbMetaPath)) {
+        cerr << "Error: Database for user '" << username << "' already exists." << endl;
+        return false;
+    }
+
     return fileManager.create_directory(dbMetaPath) && fileManager.create_directory(dbDataPath);
 }
 
+// 在指定数据库中创建新表
 bool SQLInterface::create_table(const std::string& dbName, const std::string& tableName,
-    const vector<string>& fields, const map<string, int>& constraints) {
-    return fileManager.create_table(dbName, tableName, fields, constraints);
+    const std::vector<std::pair<std::string, std::string>>& fieldsWithType,
+    const std::map<std::string, int>& constraints) {
+    return fileManager.create_table(dbName, tableName, fieldsWithType, constraints);
 }
 
+// 删除指定数据库中的表
 bool SQLInterface::drop_table(const string& dbName, const string& tableName) {
     return fileManager.delete_table(dbName, tableName);
 }
@@ -83,28 +87,6 @@ bool SQLInterface::drop_table(const string& dbName, const string& tableName) {
 bool validateFieldType(const string& typeStr) {
     static const regex typeRegex(R"((CHAR\(\d+\)|INT|DATE|BOOL))");
     return regex_match(typeStr, typeRegex);
-}
-
-// 辅助函数：解析字段定义
-vector<pair<string, string>> parseFieldDefinitions(const string& defPath) {
-    vector<pair<string, string>> fields;
-    ifstream defFile(defPath);
-    string line;
-
-    while (getline(defFile, line)) {
-        istringstream iss(line);
-        string fieldName, typeAndRest;
-        if (iss >> fieldName >> typeAndRest) {
-            // 提取数据类型部分（可能包含CHAR(20)等）
-            size_t paren = typeAndRest.find('(');
-            string type = (paren != string::npos) ?
-                typeAndRest.substr(0, paren + 1) :  // 保留CHAR( 用于正则校验
-                typeAndRest;
-
-            fields.emplace_back(fieldName, typeAndRest);
-        }
-    }
-    return fields;
 }
 
 // 修改后的字段添加函数（新增类型校验）
@@ -145,7 +127,7 @@ vector<string> split_values(const string& input) {
 // 新增辅助函数：解析字段类型
 vector<string> parseFieldTypes(const string& dbName, const string& tableName) {
     vector<string> types;
-    string ticPath = METADATA_DB_ROOT + dbName + "/" + tableName + ".tic";
+    string ticPath = METADATA_DB_ROOT + dbName + "/" + tableName + "/" + tableName + ".tic"; // 修改路径
     ifstream ticFile(ticPath);
     string line;
 
@@ -186,21 +168,20 @@ bool validateValueType(const string& type, const string& value) {
     return false;
 }
 
-
-
-
+// 生成授权指定用户特定权限的 SQL 语句（当前未实现具体授权逻辑）
 string SQLInterface::grant_privilege_sql(const string& username, const string& privilegeType) {
     return "GRANT " + privilegeType + " TO " + username + ";";
 }
 
+// 向指定表中插入一行数据
 bool SQLInterface::insert_into_table(const string& dbName, const string& tableName, const string& rowData) {
-    string dataPath = COMMONDATA_ROOT + dbName + "/" + tableName + ".trd";
+    string dataPath = COMMONDATA_ROOT  + tableName + ".trd"; // 修改路径
 
     // 调试输出
     cout << "[DEBUG] 数据文件路径: " << dataPath << endl;
 
-    // 检查元数据文件
-    string ticPath = METADATA_DB_ROOT + dbName + "/" + tableName + ".tic";
+    // 检查元数据文件是否存在
+    string ticPath = METADATA_DB_ROOT + dbName + "/" + tableName + "/" + tableName + ".tic"; // 修改路径
     if (!filesystem::exists(ticPath)) {
         cerr << "错误：字段类型文件不存在 (" << ticPath << ")" << endl;
         return false;
@@ -251,10 +232,10 @@ bool SQLInterface::insert_into_table(const string& dbName, const string& tableNa
     return true;
 }
 
-// 修改后的update_table_row实现
+// 更新指定表中指定行的数据
 bool SQLInterface::update_table_row(const string& dbName, const string& tableName,
     int rowIndex, const string& newRow) {
-    string dataPath = COMMONDATA_ROOT + dbName + "/" + tableName + ".trd";
+    string dataPath = COMMONDATA_ROOT  + tableName+ ".trd"; // 修改路径
 
     // 获取字段类型
     vector<string> fieldTypes = parseFieldTypes(dbName, tableName);
@@ -278,23 +259,26 @@ bool SQLInterface::update_table_row(const string& dbName, const string& tableNam
         }
     }
 
-    // 原有更新逻辑
+    // 读取所有行
     ifstream inFile(dataPath);
     vector<string> lines;
     string line;
     while (getline(inFile, line)) lines.push_back(line);
     inFile.close();
 
+    // 检查行索引是否有效
     if (rowIndex < 0 || rowIndex >= lines.size()) return false;
     lines[rowIndex] = newRow;
 
+    // 写回所有行
     ofstream outFile(dataPath);
     for (const auto& l : lines) outFile << l << "\n";
     return true;
 }
 
+// 删除指定表中指定行的数据
 bool SQLInterface::delete_table_row(const string& dbName, const string& tableName, int rowIndex) {
-    string dataPath = COMMONDATA_ROOT + dbName + "/" + tableName + ".trd";
+    string dataPath = COMMONDATA_ROOT + tableName + ".trd"; // 修改路径
     ifstream inFile(dataPath);
     vector<string> lines;
     string line;

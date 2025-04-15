@@ -2,12 +2,9 @@
 
 using namespace std;
 
-
 // 解析 SQL 字符串为 SQLCommand
 SQLCommand SQLParser::parse(const string& sql) {
-
     using namespace std;
-
 
     SQLCommand cmd;
     cmd.type = SQLCommand::UNKNOWN;
@@ -24,9 +21,10 @@ SQLCommand SQLParser::parse(const string& sql) {
         return cmd;
     }
 
-    // 修改后的 CREATE TABLE 正则表达式
-    // 增强的 CREATE TABLE 解析
-    regex createTableRegex(R"(CREATE\s+TABLE\s+(\w+)\s*\((.+)\)\s*;?)", regex::icase);
+    // 解析 CREATE TABLE 语句
+    regex createTableRegex(
+        R"(CREATE\s+TABLE\s+(\w+)\s*\(\s*([^;]+)\s*\)\s*;?)",
+        regex::icase);
     if (regex_search(sql, match, createTableRegex)) {
         cmd.type = SQLCommand::CREATE;
         cmd.tableName = match[1];
@@ -42,8 +40,8 @@ SQLCommand SQLParser::parse(const string& sql) {
         return cmd;
     }
 
-    // 解析 UPDATE 语句
-    regex updateRegex(R"(UPDATE (\w+) SET (.*?) WHERE (.*?);)", regex::icase);
+    // 解析 UPDATE 语句 (假设 WHERE 子句是行索引)
+    regex updateRegex(R"(UPDATE (\w+) SET (.*?) WHERE (\d+);)", regex::icase);
     if (regex_match(sql, match, updateRegex)) {
         cmd.type = SQLCommand::UPDATE;
         cmd.tableName = match[1];
@@ -52,8 +50,8 @@ SQLCommand SQLParser::parse(const string& sql) {
         return cmd;
     }
 
-    // 解析 DELETE 语句
-    regex deleteRegex(R"(DELETE FROM (\w+) WHERE (.*?);)", regex::icase);
+    // 解析 DELETE 语句 (假设 WHERE 子句是行索引)
+    regex deleteRegex(R"(DELETE FROM (\w+) WHERE (\d+);)", regex::icase);
     if (regex_match(sql, match, deleteRegex)) {
         cmd.type = SQLCommand::DELETE;
         cmd.tableName = match[1];
@@ -80,36 +78,39 @@ vector<string> SQLParser::split_values(const string& input) {
     return result;
 }
 
+// 解析 CREATE TABLE 语句中的字段定义
 void SQLParser::parse_field_definitions(const string& fieldDefs, SQLCommand& cmd) {
-    // 支持多行字段定义的正则表达式
+    // Normalize whitespace: replace multiple spaces with a single space
+    string cleanedDefs = regex_replace(fieldDefs, regex(R"(\s+)"), " ");
+    // Trim leading and trailing whitespace
+    cleanedDefs = regex_replace(cleanedDefs, regex(R"(^\s+|\s+$)"), "");
+    // Normalize whitespace around commas: ensure a single space after each comma
+    cleanedDefs = regex_replace(cleanedDefs, regex(R"(\s*,\s*)"), ", ");
+
     regex fieldRegex(
-        R"(\s*(\w+)\s+)"          // 字段名
-        R"((\w+\(?\d*\)?))"       // 字段类型（支持CHAR(9)格式）
-        R"(\s*(PRIMARY\s+KEY)?)"  // 主键约束
-        R"(\s*,?)",               // 结尾逗号
+        R"(\s*(\w+)\s+)"            // 字段名 (捕获组 1)杀
+        R"((\w+(?:\(\d+\))?))"        // 字段类型（支持CHAR(9)格式） (捕获组 2)
+        R"(\s*(PRIMARY\s+KEY)?)"        // 主键约束 (捕获组 3)
+        R"(\s*,?\s*)",                    // 结尾逗号
         regex::icase
     );
 
-    sregex_iterator it(fieldDefs.begin(), fieldDefs.end(), fieldRegex);
+    sregex_iterator it(cleanedDefs.begin(), cleanedDefs.end(), fieldRegex);
     sregex_iterator end;
     int fieldIndex = 0;
 
     for (; it != end; ++it) {
         smatch match = *it;
-        string fullDef = match[0];
+        if (match.size() == 5) {
+            std::string fieldName = match[1].str();
+            std::string fieldType = match[2].str();
+            cmd.fieldDefinitionsWithType.push_back({ fieldName, fieldType });
 
-        // 清理末尾逗号
-        if (!fullDef.empty() && fullDef.back() == ',') {
-            fullDef.pop_back();
+            // 处理主键约束
+            if (match[3].matched) {
+                cmd.constraints["primary_key"] = fieldIndex;
+            }
+            fieldIndex++;
         }
-
-        cmd.fieldDefinitions.push_back(fullDef);
-
-        // 处理主键约束
-        if (match[3].matched) {
-            cmd.constraints["primary_key"] = fieldIndex;
-        }
-
-        fieldIndex++;
     }
 }

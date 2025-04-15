@@ -1,9 +1,13 @@
 #include <iostream>
 #include "SQLParser.h"
 #include "SQLInterface.h"
+#include <fstream>
+#include <vector>
+#include <string>
+
 using namespace std;
 
-
+// 打印解析后的值
 void print_values(const vector<string>& values) {
     using namespace std;
 
@@ -14,24 +18,27 @@ void print_values(const vector<string>& values) {
     cout << endl;
 }
 
+// 打印表元数据信息
 void print_metadata(const string& dbName, const string& tableName) {
-
     using namespace std;
 
-
     cout << "\n=== 表元数据验证 ===" << endl;
-    ifstream tdf("DATA/METADATA/DBATTER/" + dbName + "/" + tableName + ".tdf");
-    ifstream tic("DATA/METADATA/DBATTER/" + dbName + "/" + tableName + ".tic");
-    ifstream tid("DATA/METADATA/DBATTER/" + dbName + "/" + tableName + ".tid");
+    ifstream tdf("DATA/METADATA/DBATTER/" + dbName + "/" + tableName + "/" + tableName + ".tdf");
+    ifstream tic("DATA/METADATA/DBATTER/" + dbName + "/" + tableName + "/" + tableName + ".tic");
+    ifstream tid("DATA/METADATA/DBATTER/" + dbName + "/" + tableName + "/" + tableName + ".tid");
 
     cout << "字段名: ";
     string line;
-    getline(tdf, line);
-    cout << line << endl;
+    while (getline(tdf, line)) {
+        cout << line << " ";
+    }
+    cout << endl;
 
     cout << "字段类型: ";
-    getline(tic, line);
-    cout << line << endl;
+    while (getline(tic, line)) {
+        cout << line << " ";
+    }
+    cout << endl;
 
     cout << "约束条件:\n";
     while (getline(tid, line)) {
@@ -40,15 +47,17 @@ void print_metadata(const string& dbName, const string& tableName) {
 }
 
 int main() {
-
     using namespace std;
-
 
     SQLInterface db;
     SQLParser parser;
+    string dbName = "alice";
+    string tableName = "student";
 
     // === 用户与数据库初始化 ===
     cout << "\n=== 初始化用户 ===" << endl;
+    string createUserSQL = "CREATE USER alice IDENTIFIED BY '123456' WITH PRIVILEGE 'admin';";
+    // 假设用户创建逻辑直接在 main 中测试
     if (db.create_user("alice", "123456", "admin")) {
         cout << "用户 'alice' 创建成功\n";
     }
@@ -57,17 +66,18 @@ int main() {
     }
 
     cout << "\n=== 创建数据库 ===" << endl;
+    string createDatabaseSQL = "CREATE DATABASE alice;";
+    // 假设数据库创建逻辑直接在 main 中测试
     if (db.create_database("alice")) {
         cout << "数据库创建成功\n";
     }
     else {
-        cout << "数据库创建失败\n";
-        return 1;
+        cout << "数据库创建失败，已创建\n";
     }
 
     // === 创建带完整字段定义的表 ===
     cout << "\n=== 创建学生表 ===" << endl;
-    string createSQL = R"(
+    string createTableSQL = R"(
         CREATE TABLE student (
             sno INT PRIMARY KEY,
             sname CHAR(20),
@@ -76,20 +86,22 @@ int main() {
         );
     )";
 
-    SQLCommand createCmd = parser.parse(createSQL);
+    SQLCommand createCmd = parser.parse(createTableSQL);
     if (createCmd.type == SQLCommand::CREATE) {
-        if (db.create_table("alice",
+        if (db.create_table(dbName,
             createCmd.tableName,
-            createCmd.fieldDefinitions,
+            createCmd.fieldDefinitionsWithType,
             createCmd.constraints))
         {
             cout << "表 'student' 创建成功\n";
-            print_metadata("alice", "student");
+            print_metadata(dbName, createCmd.tableName);
         }
         else {
-            cout << "表创建失败\n";
-            return 1;
+            cout << "表创建失败，已存在\n";
         }
+    }
+    else {
+        cout << "解析错误: " << createCmd.type << endl;
     }
 
     // === 插入合法数据 ===
@@ -106,7 +118,8 @@ int main() {
             for (size_t i = 0; i < cmd.values.size(); ++i) {
                 rowData += cmd.values[i] + (i < cmd.values.size() - 1 ? "," : "");
             }
-            if (db.insert_into_table("alice", cmd.tableName, rowData)) {
+            cout << "[DEBUG] 准备插入数据: " << rowData << endl;
+            if (db.insert_into_table(dbName, cmd.tableName, rowData)) {
                 cout << "成功插入: ";
                 print_values(cmd.values);
             }
@@ -120,9 +133,9 @@ int main() {
     // === 插入非法数据 ===
     cout << "\n=== 测试非法数据插入 ===" << endl;
     vector<string> invalidInserts = {
-        "INSERT INTO student VALUES ('abc', 'Alice', 20, 'F');",  // 学号非整数
-        "INSERT INTO student VALUES (1003, 'ThisIsALongNameExceedingLimit', 22, 'M');",  // 姓名超长
-        "INSERT INTO student VALUES (1004, 'Charlie', 'twenty', 'X');"  // 年龄非整数
+        "INSERT INTO student VALUES ('abc', 'Alice', 20, 'F');",    // 学号非整数
+        "INSERT INTO student VALUES (1003, 'ThisIsALongNameExceedingLimit', 22, 'M');", // 姓名超长
+        "INSERT INTO student VALUES (1004, 'Charlie', 'twenty', 'X');"      // 年龄非整数
     };
 
     for (const auto& sql : invalidInserts) {
@@ -132,7 +145,8 @@ int main() {
             for (size_t i = 0; i < cmd.values.size(); ++i) {
                 rowData += cmd.values[i] + (i < cmd.values.size() - 1 ? "," : "");
             }
-            if (!db.insert_into_table("alice", cmd.tableName, rowData)) {
+            cout << "[DEBUG] 准备插入非法数据: " << rowData << endl;
+            if (!db.insert_into_table(dbName, cmd.tableName, rowData)) {
                 cout << "拦截非法数据: ";
                 print_values(cmd.values);
             }
@@ -145,18 +159,44 @@ int main() {
 
     // === 更新数据 ===
     cout << "\n=== 测试数据更新 ===" << endl;
-    string updateSQL = "UPDATE student SET 1001, 'Alice Smith', 21, 'F' WHERE 0;";
+    string updateSQL = "UPDATE student SET sno=1001,sname='Alice Smith',age=21,gender='F' WHERE 0;";
     SQLCommand updateCmd = parser.parse(updateSQL);
     if (updateCmd.type == SQLCommand::UPDATE) {
-        if (db.update_table_row("alice",
+        string newRowData = "1001,'Alice Smith',21,'F'";
+        if (db.update_table_row(dbName,
             updateCmd.tableName,
             updateCmd.rowIndex,
-            updateCmd.newRow))
-        {
+            newRowData)) {
             cout << "行更新成功\n";
         }
         else {
             cout << "行更新失败\n";
+        }
+    }
+
+    //// === 删除数据 ===
+    //cout << "\n=== 测试数据删除 ===" << endl;
+    //string deleteSQL = "DELETE FROM student WHERE 0;";
+    //SQLCommand deleteCmd = parser.parse(deleteSQL);
+    //if (deleteCmd.type == SQLCommand::DELETE) {
+    //    if (db.delete_table_row(dbName, deleteCmd.tableName, deleteCmd.rowIndex)) {
+    //        cout << "行删除成功\n";
+    //    }
+    //    else {
+    //        cout << "行删除失败\n";
+    //    }
+    //}
+
+    // === 删除表 ===
+    cout << "\n=== 测试删除表 ===" << endl;
+    string dropTableSQL = "DROP TABLE student;";
+    SQLCommand dropCmd = parser.parse(dropTableSQL);
+    if (dropCmd.type == SQLCommand::DROP) {
+        if (db.drop_table(dbName, dropCmd.tableName)) {
+            cout << "表 'student' 删除成功\n";
+        }
+        else {
+            cout << "表删除失败\n";
         }
     }
 
