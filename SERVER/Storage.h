@@ -1,60 +1,68 @@
-#pragma once
-#include <fstream>
+ï»¿#pragma once
+#include <string>
 #include <vector>
 #include <map>
-#include <string>
+#include <fstream> // ç”¨äºæ–‡ä»¶æµæ“ä½œ
 
 /*
-¼Ü¹¹ËµÃ÷£º
+æ–‡ä»¶ç³»ç»Ÿæ¶æ„è¯´æ˜ (ä¸ SQLInterface ä¸­çš„ä¸€è‡´):
 DATA
 |- METADATA
-|  |- USERATTER/
-|  |  |- user_header.txt   -- ÓÃ»§±íÍ·¶¨Òå
-|  |  |- user_data.txt     -- ÓÃ»§Êı¾İ¼ÇÂ¼
-|  |- DBATTER/
-|  |  |- [ÓÃ»§Ãû]/
-|  |     |- [Êı¾İ¿âÃû]/
-|  |        |- [±íÃû]/      -- ĞÂÔö±íÄ¿Â¼
-|  |           |- [±íÃû].tdf   -- ×Ö¶ÎÃûÎÄ¼ş (Ã¿ĞĞÒ»¸ö×Ö¶ÎÃû)
-|  |           |- [±íÃû].tic   -- ×Ö¶ÎÀàĞÍÎÄ¼ş (Ã¿ĞĞÒ»¸ö×Ö¶ÎÀàĞÍ)
-|  |           |- [±íÃû].tid   -- Ô¼ÊøÎÄ¼ş (Ã¿ĞĞÒ»¸öÔ¼Êø)
+|Â  |- USERATTER/        -- ç”¨æˆ·å…ƒæ•°æ®ç›®å½•
+|Â  |Â  |- user_header.txt -- ç”¨æˆ·è¡¨å¤´å®šä¹‰æ–‡ä»¶
+|Â  |Â  |- user_data.txt   -- ç”¨æˆ·æ•°æ®è®°å½•æ–‡ä»¶
+|Â  |- DBATTER/          -- æ•°æ®åº“å…ƒæ•°æ®æ ¹ç›®å½•
+|Â  |Â  |- [ç”¨æˆ·å]/       -- æ¯ä¸ªç”¨æˆ·ä¸€ä¸ªæ•°æ®åº“ç›®å½• (ä½œä¸ºæ•°æ®åº“å)
+|Â  |Â  |Â  |- [æ•°æ®åº“å]/   -- æ•°æ®åº“ç›®å½• (è¿™é‡Œä½¿ç”¨ç”¨æˆ·åä½œä¸ºæ•°æ®åº“åï¼Œå®é™…åº”ç”¨å¯èƒ½ä¸åŒ)
+|Â  |Â  |Â  Â  |- [è¡¨å]/     -- æ–°å¢ï¼šæ¯ä¸ªè¡¨æœ‰ç‹¬ç«‹çš„å…ƒæ•°æ®ç›®å½•
+|Â  |Â  |Â  Â  Â  |- [è¡¨å].tdf -- å­—æ®µåæ–‡ä»¶ (æ¯è¡Œä¸€ä¸ªå­—æ®µå)
+|Â  |Â  |Â  Â  Â  |- [è¡¨å].tic -- å­—æ®µç±»å‹æ–‡ä»¶ (æ¯è¡Œä¸€ä¸ªå­—æ®µç±»å‹)
+|Â  |Â  |Â  Â  Â  |- [è¡¨å].tid -- çº¦æŸæ–‡ä»¶ (æ¯è¡Œä¸€ä¸ªçº¦æŸ)
 |
-|- COMMONDATA
-            |- [±íÃû].trd     -- ±íÊı¾İÎÄ¼ş
+|- COMMONDATA           -- é€šç”¨æ•°æ®æ ¹ç›®å½• (æ•°æ®æ–‡ä»¶æ”¾åœ¨è¿™é‡Œ)
+Â  Â  Â  Â  Â  Â  |- [è¡¨å].trd -- è¡¨æ•°æ®æ–‡ä»¶ (æ¯è¡Œä¸€æ¡è®°å½•)
 */
 
+
+// æ–‡ä»¶ç®¡ç†å™¨ç±»ï¼Œè´Ÿè´£åº•å±‚çš„æ–‡ä»¶å’Œç›®å½•æ“ä½œ
 class FileManager {
 private:
-    // Êı¾İ¿âÔªÊı¾İ¸ùÂ·¾¶
+    // æ•°æ®åº“å…ƒæ•°æ®æ ¹è·¯å¾„
     const std::string METADATA_ROOT = "DATA/METADATA/DBATTER/";
-    // Í¨ÓÃÊı¾İ¸ùÂ·¾¶
+    // é€šç”¨æ•°æ®æ ¹è·¯å¾„
     const std::string COMMON_ROOT = "DATA/COMMONDATA/";
+    // ç”¨æˆ·å…ƒæ•°æ®æ ¹è·¯å¾„ (ç”¨äºåˆ›å»ºç”¨æˆ·ç›¸å…³çš„ç›®å½•)
+    const std::string METADATA_USER_ROOT = "DATA/METADATA/USERATTER/"; // æ–°å¢æˆ–ç¡®è®¤
 
-    // Ğ´Èë¶ş½øÖÆÎÄ¼şµÄÄ£°åº¯Êı£¨Î´Ê¹ÓÃ£©
+    // å†™å…¥äºŒè¿›åˆ¶æ–‡ä»¶çš„æ¨¡æ¿å‡½æ•° (å½“å‰æœªä½¿ç”¨ï¼Œä¿ç•™)
     template<typename T>
     int write_to_file(const std::string& path, const T& data) {
         std::ofstream file(path, std::ios::binary | std::ios::in | std::ios::out);
-        if (!file) return false;
+        if (!file.is_open()) return 0; // å¤±è´¥
         file.write(reinterpret_cast<const char*>(&data), sizeof(T));
-        return file.good();
+        return file.good() ? 1 : 0; // æˆåŠŸè¿”å› 1ï¼Œå¤±è´¥è¿”å› 0
     }
 
-    // ´´½¨¶ş½øÖÆÎÄ¼şµÄº¯Êı£¨Î´Ê¹ÓÃ£©
-    // 0:Ê§°Ü
-    // 1:³É¹¦
-    // -1:ÎÄ¼şÒÑ´æÔÚ
+    // åˆ›å»ºï¼ˆç©ºçš„ï¼‰äºŒè¿›åˆ¶æ–‡ä»¶çš„å‡½æ•° (å½“å‰æœªä½¿ç”¨ï¼Œä¿ç•™)
+    // 0:å¤±è´¥, 1:æˆåŠŸ, -1:æ–‡ä»¶å·²å­˜åœ¨
     int write_to_file(const std::string& path);
 
 public:
-    // ´´½¨ĞÂ±í£¬°üÀ¨¶¨ÒåÎÄ¼ş¡¢ÀàĞÍÎÄ¼ş¡¢Ô¼ÊøÎÄ¼şºÍÊı¾İÎÄ¼ş
+    // æ„é€ å‡½æ•° (å¯ä»¥ç”¨æ¥è¿›è¡Œä¸€äº›åˆå§‹åŒ–æ£€æŸ¥)
+    FileManager();
+
+    // åˆ›å»ºæ–°è¡¨æ‰€éœ€çš„æ‰€æœ‰æ–‡ä»¶å’Œç›®å½•
     bool create_table(const std::string& dbName,
         const std::string& tableName,
         const std::vector<std::pair<std::string, std::string>>& fieldsWithType,
         const std::map<std::string, int>& constraints);
-    // É¾³ıÖ¸¶¨Êı¾İ¿âÖĞµÄ±í½á¹¹¼°ÆäÊı¾İ
+
+    // åˆ é™¤æŒ‡å®šæ•°æ®åº“ä¸­çš„è¡¨çš„æ‰€æœ‰ç›¸å…³æ–‡ä»¶å’Œç›®å½•
     bool delete_table(const std::string& dbName, const std::string& tableName);
-    // ´´½¨ÎÄ¼ş¼Ğ£¬Èç¹û¸¸Ä¿Â¼²»´æÔÚÔòÒ»²¢´´½¨
+
+    // åˆ›å»ºæ–‡ä»¶å¤¹ (åŒ…æ‹¬å…¶æ‰€æœ‰ä¸å­˜åœ¨çš„çˆ¶ç›®å½•)
     bool create_directory(const std::string& path);
-    // É¾³ıÎÄ¼ş
+
+    // åˆ é™¤æ–‡ä»¶
     bool delete_file(const std::string& path);
 };
