@@ -243,67 +243,72 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
         cmd.tableName = match[1];
         string actionStr = trim(match[2].str()); // 获取操作部分的字符串并去除空白
 
-        smatch actionMatch; // 用于匹配具体操作的 smatch
+        smatch actionMatch;
 
         // 6a. 解析 RENAME TO new_table_name
-        regex renameTableRegex(R"(RENAME\s+TO\s+(\w+))", regex::icase);
+        // 修改：添加 \s*;?\s*$ 确保匹配到结尾，并处理可选分号
+        regex renameTableRegex(R"(RENAME\s+TO\s+(\w+)\s*;?\s*$)", regex::icase);
         if (regex_match(actionStr, actionMatch, renameTableRegex)) {
             cmd.alterAction = SQLCommand::RENAME_TABLE;
             cmd.newTableName = actionMatch[1]; // 捕获新表名
+            cout << "调试: 解析 RENAME TABLE TO " << cmd.newTableName << " 成功。" << endl;
             return cmd;
         }
 
         // 6b. 解析 ADD [COLUMN] column_name type
-        // 允许类型带括号和数字，如 CHAR(10)
-        regex addColumnRegex(R"(ADD\s+(?:COLUMN\s+)?(\w+)\s+(\w+(?:\(\s*\d+\s*\))?))", regex::icase);
-        // 列名(1)       列类型(2)
+        // 修改：添加 \s*;?\s*$
+        regex addColumnRegex(R"(ADD\s+(?:COLUMN\s+)?(\w+)\s+(\w+(?:\(\s*\d+\s*\))?)\s*;?\s*$)", regex::icase);
         if (regex_match(actionStr, actionMatch, addColumnRegex)) {
             cmd.alterAction = SQLCommand::ADD_COLUMN;
-            cmd.columnName = actionMatch[1]; // 捕获列名
-            // 规范化类型字符串（去除内部空格）并存储 "名字 类型" 格式
-            cmd.columnDefinition = actionMatch[1].str() + " " + regex_replace(actionMatch[2].str(), regex(R"(\s+)"), "");
-            // 注意: ADD COLUMN 时可能带有的约束（如 NOT NULL, DEFAULT）这里还未解析
+            cmd.columnName = actionMatch[1].str();
+            string rawType = actionMatch[2].str();
+            string normalizedType = regex_replace(rawType, regex(R"(\s+)"), "");
+            cmd.columnDefinition = cmd.columnName + " " + normalizedType;
+            cout << "调试: 解析 ADD COLUMN 成功。列名: " << cmd.columnName << ", 定义: " << cmd.columnDefinition << endl;
             return cmd;
         }
 
         // 6c. 解析 DROP [COLUMN] column_name
-        regex dropColumnRegex(R"(DROP\s+(?:COLUMN\s+)?(\w+))", regex::icase);
-        // 列名(1)
+        // 修改：添加 \s*;?\s*$
+        regex dropColumnRegex(R"(DROP\s+(?:COLUMN\s+)?(\w+)\s*;?\s*$)", regex::icase);
         if (regex_match(actionStr, actionMatch, dropColumnRegex)) {
             cmd.alterAction = SQLCommand::DROP_COLUMN;
-            cmd.columnName = actionMatch[1]; // 捕获要删除的列名
+            cmd.columnName = actionMatch[1].str(); // 捕获要删除的列名
+            cout << "调试: 解析 DROP COLUMN " << cmd.columnName << " 成功。" << endl;
             return cmd;
         }
 
         // 6d. 解析 MODIFY [COLUMN] column_name new_type
-        regex modifyColumnRegex(R"(MODIFY\s+(?:COLUMN\s+)?(\w+)\s+(\w+(?:\(\s*\d+\s*\))?))", regex::icase);
-        // 列名(1)      新类型(2)
+        // 修改：添加 \s*;?\s*$
+        regex modifyColumnRegex(R"(MODIFY\s+(?:COLUMN\s+)?(\w+)\s+(\w+(?:\(\s*\d+\s*\))?)\s*;?\s*$)", regex::icase);
         if (regex_match(actionStr, actionMatch, modifyColumnRegex)) {
             cmd.alterAction = SQLCommand::MODIFY_COLUMN;
-            cmd.columnName = actionMatch[1]; // 捕获要修改的列名
-            // 存储规范化后的新类型定义
-            cmd.columnDefinition = regex_replace(actionMatch[2].str(), regex(R"(\s+)"), "");
+            cmd.columnName = actionMatch[1].str(); // 捕获要修改的列名
+            string rawNewType = actionMatch[2].str();
+            cmd.columnDefinition = regex_replace(rawNewType, regex(R"(\s+)"), ""); // 存储规范化后的新类型定义
+            cout << "调试: 解析 MODIFY COLUMN " << cmd.columnName << " TO " << cmd.columnDefinition << " 成功。" << endl;
             return cmd;
         }
 
         // 6e. 解析 RENAME [COLUMN] old_name TO new_name
-        regex renameColumnRegex(R"(RENAME\s+(?:COLUMN\s+)?(\w+)\s+TO\s+(\w+))", regex::icase);
-        // 旧列名(1)       新列名(2)
+        // 修改：添加 \s*;?\s*$
+        regex renameColumnRegex(R"(RENAME\s+(?:COLUMN\s+)?(\w+)\s+TO\s+(\w+)\s*;?\s*$)", regex::icase);
         if (regex_match(actionStr, actionMatch, renameColumnRegex)) {
             cmd.alterAction = SQLCommand::RENAME_COLUMN;
-            cmd.columnName = actionMatch[1]; // 存储旧列名
-            cmd.newColumnName = actionMatch[2]; // 存储新列名
+            cmd.columnName = actionMatch[1].str(); // 存储旧列名
+            cmd.newColumnName = actionMatch[2].str(); // 存储新列名
+            cout << "调试: 解析 RENAME COLUMN " << cmd.columnName << " TO " << cmd.newColumnName << " 成功。" << endl;
             return cmd;
         }
 
         // 如果 ALTER TABLE 后面的操作部分无法匹配任何已知模式
-        cerr << "错误: 未知或无效的 ALTER TABLE 操作: " << actionStr << endl;
+        cerr << "错误: 未知或无效的 ALTER TABLE 操作: '" << actionStr << "'" << endl;
         cmd.type = SQLCommand::UNKNOWN; // 标记为无效命令
         cmd.alterAction = SQLCommand::INVALID_ALTER;
         return cmd;
+        
+       
     }
-
-
     // 如果没有任何模式匹配成功
     cmd.type = SQLCommand::UNKNOWN;
     return cmd;
