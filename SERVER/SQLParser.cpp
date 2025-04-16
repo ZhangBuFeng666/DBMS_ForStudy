@@ -138,35 +138,187 @@ void SQLParser::parse_set_clause(const std::string& setClauseStr, SQLCommand& cm
     }
 }
 
-// --- 辅助函数：解析简单的 WHERE 子句 (例如 "WHERE 字段 = 值" 或 "WHERE 字段 = '值'") ---
-bool SQLParser::parse_where_clause(const std::string& whereClauseStr, SQLCommand& cmd) {
-    // 正则表达式匹配 "WHERE 字段 = 值"
-    // WHERE\s+(\w+)\s*=\s*               # 匹配 "WHERE 字段 =" (捕获组 1: 字段名)
-    // (?:                               # 开始非捕获组 (选择值的部分)
-    //   '((?:[^']|'')*)'                 #   匹配引号值 (捕获组 2: 值内容)
-    //   |                               # 或者
-    //   ([^;' ]+)                       #   匹配非引号值 (不含分号和空格) (捕获组 3: 值内容)
-    // )
-    // \s*;?                             # 匹配可选的结尾分号和空格
-    regex whereRegex(R"(WHERE\s+(\w+)\s*=\s*(?:'((?:[^']|'')*)'|([^;' ]+))\s*;?)", regex::icase);
-    smatch whereMatch;
-    // 这里用 regex_match 是因为 WHERE 子句通常是跟在 SET 或 FROM 之后，作为独立的、完整的待解析部分传入
-    if (regex_match(whereClauseStr, whereMatch, whereRegex)) {
-        cmd.whereColumn = whereMatch[1].str();
-        if (whereMatch[2].matched) { // 匹配到引号值
-            cmd.whereValue = regex_replace(whereMatch[2].str(), regex("''"), "'"); // 去转义
+// --- 修改 parse_where_clause 以支持 = 和 IN ---
+// 参数: whereClauseStrFull - 包含 "WHERE" 关键字的完整子句字符串
+// 返回: true 如果解析成功 (即使是空条件), false 如果格式错误
+bool SQLParser::parse_where_clause(const std::string& whereClauseStrFull, SQLCommand& cmd) {
+    string whereClause = trim(whereClauseStrFull); // 去除首尾空白
+    cmd.hasWhere = false; // 重置状态
+    cmd.useInClause = false;
+    cmd.whereColumn = "";
+    cmd.whereValue = "";
+    cmd.inValues.clear();
+
+    if (whereClause.empty() || whereClause.rfind("WHERE", 0) != 0) { // 必须以 WHERE 开头 (忽略大小写)
+        // 如果传入的不是以 WHERE 开头的非空字符串，则认为格式错误
+        if (!whereClause.empty()) {
+            cerr << "错误: 无效的 WHERE 子句格式 (缺少 WHERE 关键字?): " << whereClauseStrFull << endl;
+            return false;
         }
-        else if (whereMatch[3].matched) { // 匹配到非引号值
-            cmd.whereValue = trim(whereMatch[3].str());
+        return true; // 空的或只有 WHERE 关键字也算“解析成功”，只是没有条件
+    }
+
+
+    // 尝试匹配 'WHERE col = value' 格式
+    // WHERE\s+(\w+)\s*=\s*                    # WHERE col =
+    // (?:'((?:[^']|'')*)'|([^; ]+))          # value (带引号或不带引号直到分号或空格)
+    // \s*;?                                   # 可选分号
+    regex whereEqRegex(R"(WHERE\s+(\w+)\s*=\s*(?:'((?:[^']|'')*)'|([^; ]+))\s*;?)", regex::icase);
+    //   col(1)      'val'(2)   val(3)
+    smatch matchEq;
+    // 注意：这里用 regex_match 是因为我们期望整个 whereClause 字符串匹配这个模式
+    if (regex_match(whereClause, matchEq, whereEqRegex)) {
+        cmd.hasWhere = true; // 确认有有效的 WHERE 条件
+        cmd.useInClause = false;
+        cmd.whereColumn = matchEq[1].str();
+        if (matchEq[2].matched) { // 带引号的值
+            cmd.whereValue = regex_replace(matchEq[2].str(), regex("''"), "'");
+        }
+        else if (matchEq[3].matched) { // 不带引号的值
+            cmd.whereValue = trim(matchEq[3].str());
         }
         else {
-            return false; // 不应发生
+            cmd.hasWhere = false; // 值解析失败
+            cerr << "错误: WHERE (=) 子句中无法解析值部分。" << endl;
+            return false;
         }
-        return true; // 解析成功
+        cout << "调试: 解析 WHERE (=) 成功。列: " << cmd.whereColumn << ", 值: '" << cmd.whereValue << "'" << endl;
+        return true; // 成功解析 '='
     }
-    return false; // WHERE 子句格式不匹配
+
+    // 如果 '=' 不匹配，尝试匹配 'WHERE col IN (val1, val2, ...)' 格式
+    // WHERE\s+(\w+)\s+IN\s*\((.*?)\)\s*;?    # WHERE col IN ( values ) ;
+    //    col(1)      values_str(2)
+    regex whereInRegex(R"(WHERE\s+(\w+)\s+IN\s*\((.*?)\)\s*;?)", regex::icase);
+    smatch matchIn;
+    if (regex_match(whereClause, matchIn, whereInRegex)) {
+        cmd.hasWhere = true; // 确认有有效的 WHERE 条件
+        cmd.useInClause = true;
+        cmd.whereColumn = matchIn[1].str();
+        string valuesListStr = matchIn[2].str();
+        // 使用 split_values 解析 IN 列表中的值
+        cmd.inValues = split_values(valuesListStr);
+
+        if (cmd.inValues.empty() && !trim(valuesListStr).empty()) {
+            cerr << "警告: 解析 WHERE IN 子句的值列表时可能出错或列表格式不正确: " << valuesListStr << endl;
+            // 即使解析值列表有问题，结构上 IN 还是匹配了，可能返回 true 让后续逻辑处理空列表
+        }
+        else if (cmd.inValues.empty()) {
+            cerr << "警告: WHERE IN 子句的值列表为空。" << endl;
+            // IN 一个空列表在 SQL 中通常不匹配任何行
+        }
+        cout << "调试: 解析 WHERE IN 成功。列: " << cmd.whereColumn << ", 值数量: " << cmd.inValues.size() << endl;
+        return true; // 成功解析 'IN'
+    }
+
+    // 如果两种格式都不匹配，但确实以 WHERE 开头
+    cerr << "错误: 无法解析 WHERE 子句，仅支持 'col = value' 或 'col IN (values)' 格式: " << whereClause << endl;
+    return false; // 格式不支持
 }
 
+// --- 新增：解析 SELECT 列列表 ---
+// 参数: selectListStr - SELECT 关键字之后，FROM 关键字之前的部分
+void SQLParser::parse_select_list(const std::string& selectListStr, SQLCommand& cmd) {
+    cmd.selectColumns.clear(); // 清空旧数据
+    cmd.distinct = false;     // 重置 distinct 标志
+    string listStr = trim(selectListStr); // 去除首尾空白
+
+    // 检查是否有 DISTINCT 关键字 (忽略大小写)
+    // 使用 regex_search 在开头查找 "DISTINCT "
+    if (regex_search(listStr, regex(R"(^DISTINCT\s+)", regex::icase))) {
+        cmd.distinct = true;
+        // 移除 "DISTINCT " 部分，得到后面的列列表
+        listStr = regex_replace(listStr, regex(R"(^DISTINCT\s+)", regex::icase), "");
+        listStr = trim(listStr); // 再次 trim
+        cout << "调试: 检测到 DISTINCT 关键字。" << endl;
+    }
+
+    // 检查是否为 "*" (选择所有列)
+    if (listStr == "*") {
+        cmd.selectColumns.push_back("*");
+        cout << "调试: 解析 SELECT * (所有列)。" << endl;
+        return;
+    }
+
+    // 按逗号分割列名
+    // 正则：匹配单词字符列名，忽略前后空格，后面跟可选逗号
+    regex colRegex(R"(\s*(\w+)\s*,?)");
+    auto begin = sregex_iterator(listStr.begin(), listStr.end(), colRegex);
+    auto end = sregex_iterator();
+    bool columnsFound = false;
+    string parsedColsStr; // 用于调试输出
+
+    for (auto it = begin; it != end; ++it) {
+        smatch match = *it;
+        if (match[1].matched) {
+            string colName = match[1].str();
+            cmd.selectColumns.push_back(colName);
+            parsedColsStr += (columnsFound ? ", " : "") + colName; // 拼接调试字符串
+            columnsFound = true;
+        }
+    }
+
+    // 基本校验：如果不是 * 且分割后列表为空，说明可能有格式问题
+     if (!columnsFound && listStr != "*") {
+          cerr << "警告: 解析 SELECT 列列表时出错，或列表为空/格式无效: '" << selectListStr << "'" << endl;
+          // 此时 cmd.selectColumns 会是空的
+     } else if (columnsFound) {
+         cout << "调试: 解析 SELECT 列列表: " << parsedColsStr << endl;
+     }
+}
+
+
+bool SQLParser::parse_order_by_clause(const std::string& orderByStrFull, SQLCommand& cmd) {
+    string orderByClause = trim(orderByStrFull);
+    cmd.orderByColumn = ""; // 重置状态
+    cmd.sortOrder = SQLCommand::ASC; // 默认升序
+
+    if (orderByClause.empty() || orderByClause.rfind("ORDER BY", 0) != 0) { // 必须以 ORDER BY 开头 (忽略大小写)
+        if (!orderByClause.empty()) {
+            cerr << "错误: 无效的 ORDER BY 子句格式 (缺少 ORDER BY 关键字?): " << orderByStrFull << endl;
+        }
+        return false; // 格式不对或为空
+    }
+
+    // 正则：ORDER BY <列名> [ASC|DESC] ; (可选)
+    // ORDER\s+BY\s+      # ORDER BY
+    // (\w+)              # 列名 (捕获组 1)
+    // (?:\s+(ASC|DESC))? # 可选的 ASC 或 DESC (非捕获组，内部捕获组 2)
+    // \s*;?              # 可选分号和结尾空格
+    regex orderByRegex(R"(ORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?\s*;?)", regex::icase);
+    smatch match;
+    // 用 regex_match 匹配整个 orderByClause
+    if (regex_match(orderByClause, match, orderByRegex)) {
+        cmd.orderByColumn = match[1].str();
+
+        if (match[2].matched) { // 检查是否显式指定了 ASC 或 DESC
+            string order = match[2].str();
+            // 转换为大写进行比较，更健壮
+            std::transform(order.begin(), order.end(), order.begin(), ::toupper);
+            if (order == "DESC") {
+                cmd.sortOrder = SQLCommand::DESC;
+            }
+            else if (order == "ASC") {
+                cmd.sortOrder = SQLCommand::ASC;
+            }
+            else {
+                // 理论上正则限制了只会是 ASC 或 DESC，但以防万一
+                cerr << "警告: 无效的排序指示符 '" << match[2].str() << "'，将使用默认升序。" << endl;
+                cmd.sortOrder = SQLCommand::ASC;
+            }
+        }
+        else {
+            // 未指定 ASC/DESC，默认为 ASC
+            cmd.sortOrder = SQLCommand::ASC;
+        }
+        cout << "调试: 解析 ORDER BY 成功。列: " << cmd.orderByColumn << ", 顺序: " << (cmd.sortOrder == SQLCommand::ASC ? "ASC" : "DESC") << endl;
+        return true; // 解析成功
+    }
+
+    // 如果以 ORDER BY 开头但格式不匹配
+    cerr << "错误: 无法解析 ORDER BY 子句，格式应为 'ORDER BY column [ASC|DESC]': " << orderByClause << endl;
+    return false; // 格式不匹配
+}
 
 // --- 主解析函数 ---
 SQLCommand SQLParser::parse(const string& sqlInput) {
@@ -309,7 +461,57 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
         
        
     }
+    regex selectRegex(R"(SELECT\s+(DISTINCT\s+)?(.*?)\s+FROM\s+(\w+)\s*(WHERE\s+.*?)?(ORDER\s+BY\s+.*?)?\s*;?\s*$)", regex::icase);
+
+    if (regex_match(sql, match, selectRegex)) {
+        cmd.type = SQLCommand::SELECT;
+
+        // 处理 DISTINCT
+        cmd.distinct = match[1].matched; // 如果捕获组 1 匹配成功 (即存在 "DISTINCT ")
+
+        // 解析列列表
+        parse_select_list(match[2].str(), cmd); // match[2] 是列列表字符串
+
+        // 获取 FROM 表名
+        cmd.fromTable = match[3].str();
+        cmd.tableName = cmd.fromTable; // 也存入通用 tableName 字段，方便某些情况
+
+        // 解析 WHERE 子句 (如果存在)
+        if (match[4].matched) {
+            cmd.whereClauseStr = trim(match[4].str()); // 存储原始 WHERE 子句 (去除首尾空白)
+            if (!parse_where_clause(cmd.whereClauseStr, cmd)) { // 调用更新后的解析函数
+                // WHERE 子句存在但解析失败
+                cerr << "错误: 解析 SELECT 语句中的 WHERE 子句失败。" << endl;
+                cmd.type = SQLCommand::UNKNOWN; // 标记为错误
+                return cmd;
+            }
+            // parse_where_clause 内部会设置 cmd.hasWhere 等标志
+        }
+        else {
+            cmd.hasWhere = false; // 没有 WHERE 子句
+        }
+
+        // 解析 ORDER BY 子句 (如果存在)
+        if (match[5].matched) {
+            if (!parse_order_by_clause(match[5].str(), cmd)) { // 调用解析函数
+                // ORDER BY 子句存在但解析失败
+                cerr << "错误: 解析 SELECT 语句中的 ORDER BY 子句失败。" << endl;
+                cmd.type = SQLCommand::UNKNOWN; // 标记为错误
+                return cmd;
+            }
+            // parse_order_by_clause 内部会设置 cmd.orderByColumn 等
+        }
+        else {
+            cmd.orderByColumn = ""; // 没有 ORDER BY 子句
+        }
+
+        cout << "调试: SELECT 语句解析成功。" << endl;
+        return cmd; // SELECT 命令解析成功
+    }
+
+
     // 如果没有任何模式匹配成功
+    cerr << "错误: 无法识别的 SQL 命令: " << sql << endl;
     cmd.type = SQLCommand::UNKNOWN;
     return cmd;
 }

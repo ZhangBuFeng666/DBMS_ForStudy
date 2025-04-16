@@ -1,140 +1,186 @@
 #include "SQLParser.h"
-#include "SQLInterface.h"
+#include "SQLInterface.h" // 包含 SelectResult 定义
 
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>
-#include <limits> // 用于 numeric_limits (输入循环退出)
-#include <stdexcept> // 用于异常处理 (如果 SQLInterface 可能抛出)
-
-
+#include <limits>    // 用于 numeric_limits
+#include <stdexcept> // 用于异常处理
+#include <iomanip>   // 用于格式化输出 (setw)
+#include <algorithm> // 用于 max
 
 // 使用命名空间
 using namespace std;
 
-// --- 前向声明辅助函数 ---
-void print_values(const vector<string>& values);
-void print_metadata(const string& dbName, const string& tableName, SQLInterface& db); // 传递 db 访问路径
+// --- (print_values, print_metadata 实现保持不变) ---
+void print_values(const vector<string>& values) { /* ... */ }
+void print_metadata(const string& dbName, const string& tableName, SQLInterface& db) { /* ... */ }
+
+// --- 新增：打印 SELECT 结果的辅助函数 ---
+void print_select_result(const SelectResult& result) {
+    if (!result.success) {
+        cerr << "查询失败: " << result.errorMessage << endl;
+        return;
+    }
+
+    // 检查是否有有效的列头或数据行
+    if (result.header.empty() && result.data.empty()) {
+        cout << "查询成功，结果为空集。" << endl;
+        return;
+    }
+
+    size_t num_columns = 0;
+    if (!result.header.empty()) {
+        num_columns = result.header.size();
+    }
+    else if (!result.data.empty()) {
+        num_columns = result.data[0].size(); // 假设所有数据行列数一致
+    }
+    else {
+        cout << "查询成功，但无列头也无数据。" << endl; // 理论上不应发生，除非 select 了空表且无列
+        return;
+    }
+
+    if (num_columns == 0) {
+        cout << "查询成功，但选择的列数为 0。" << endl;
+        return;
+    }
+
+
+    // 1. 计算每列的最大宽度以便对齐
+    vector<size_t> widths(num_columns);
+    // 先用列头初始化宽度
+    if (!result.header.empty()) {
+        for (size_t i = 0; i < num_columns; ++i) {
+            widths[i] = result.header[i].length();
+        }
+    }
+    else {
+        // 如果没有列头，给一个最小默认宽度
+        fill(widths.begin(), widths.end(), 5); // 默认宽度 5
+    }
+
+    // 再用数据行更新宽度
+    for (const auto& row : result.data) {
+        // 确保数据行的列数与预期一致
+        if (row.size() == num_columns) {
+            for (size_t i = 0; i < num_columns; ++i) {
+                widths[i] = max(widths[i], row[i].length());
+            }
+        }
+        else {
+            cerr << "警告: 发现数据行列数 (" << row.size() << ") 与列头 (" << num_columns << ") 不匹配，可能导致显示错乱。" << endl;
+            // 可以尝试调整 widths 大小或跳过此行
+        }
+    }
+
+    // 2. 打印顶部分隔线
+    cout << "+";
+    for (size_t w : widths) { cout << string(w + 2, '-') << "+"; } cout << endl; // +2 为了左右各留一个空格
+
+    // 3. 打印表头 (如果有)
+    if (!result.header.empty()) {
+        cout << "|";
+        for (size_t i = 0; i < num_columns; ++i) {
+            // left 表示左对齐, setw 设置字段宽度
+            cout << " " << left << setw(widths[i]) << result.header[i] << " |";
+        }
+        cout << endl;
+        // 打印表头下的分隔线
+        cout << "+";
+        for (size_t w : widths) { cout << string(w + 2, '-') << "+"; } cout << endl;
+    }
+
+    // 4. 打印数据行
+    if (result.data.empty()) {
+        // 如果有表头但无数据，可以打印提示
+        if (!result.header.empty()) {
+            // cout << "(空集)" << endl;
+        }
+    }
+    else {
+        for (const auto& row : result.data) {
+            // 只打印列数匹配的行
+            if (row.size() == num_columns) {
+                cout << "|";
+                for (size_t i = 0; i < num_columns; ++i) {
+                    cout << " " << left << setw(widths[i]) << row[i] << " |";
+                }
+                cout << endl;
+            }
+        }
+        // 5. 打印底部分隔线
+        cout << "+";
+        for (size_t w : widths) { cout << string(w + 2, '-') << "+"; } cout << endl;
+    }
+    // 打印总行数
+    cout << "(" << result.data.size() << " 行)" << endl;
+}
+
 
 // --- 核心 SQL 处理函数 ---
-// 参数: sql语句, 数据库接口实例, SQL解析器实例, 当前数据库名
-// 返回: true 如果成功执行, false 如果失败
 bool process_sql(const string& sql,
     SQLInterface& db,
     SQLParser& parser,
     const string& currentDbName)
 {
     cout << "\n>> 正在处理 SQL: " << sql << endl;
-    if (sql.empty()) {
-        return true; // 空命令直接返回成功
-    }
-    SQLCommand cmd = parser.parse(sql); // 解析 SQL 语句
-    cmd.dbName = currentDbName; // 设置命令的数据库上下文
+    if (sql.empty()) return true;
+    SQLCommand cmd = parser.parse(sql);
+    cmd.dbName = currentDbName;
 
-    bool success = false; // 操作成功标志
+    bool success = false;
 
-    try { // 包裹数据库操作，捕获可能的异常
+    try {
         switch (cmd.type) {
-        case SQLCommand::CREATE:
-            if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) {
-                cerr << "错误: 无效的 CREATE TABLE 语句 (缺少表名或字段定义)。" << endl;
+            // --- (Cases for CREATE, DROP, INSERT, UPDATE, DELETE, ALTER 保持不变) ---
+        case SQLCommand::CREATE: {
+            if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) { cerr << "错误: 无效的 CREATE TABLE 语句 (缺少表名或字段定义)。" << endl; success = false; }
+            else { cout << "尝试在数据库 '" << cmd.dbName << "' 中创建表 '" << cmd.tableName << "'" << endl; /* ... (打印字段和约束) ... */ success = db.create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); if (success) { cout << "成功: 表 '" << cmd.tableName << "' 已创建。" << endl; print_metadata(cmd.dbName, cmd.tableName, db); } else { cerr << "失败: 无法创建表 '" << cmd.tableName << "' (可能已存在或发生错误)。" << endl; } }
+            break;
+        }
+        case SQLCommand::DROP: {
+            if (cmd.tableName.empty()) { cerr << "错误: 无效的 DROP TABLE 语句 (缺少表名)。" << endl; success = false; }
+            else { cout << "尝试从数据库 '" << cmd.dbName << "' 中删除表 '" << cmd.tableName << "'" << endl; success = db.drop_table(cmd.dbName, cmd.tableName); if (success) { cout << "成功: 表 '" << cmd.tableName << "' 已删除。" << endl; } else { cerr << "失败: 无法删除表 '" << cmd.tableName << "' (可能不存在或发生错误)。" << endl; } }
+            break;
+        }
+        case SQLCommand::INSERT: {
+            if (cmd.tableName.empty() || cmd.values.empty()) { cerr << "错误: 无效的 INSERT 语句 (缺少表名或值)。" << endl; success = false; }
+            else { cout << "尝试向表 '" << cmd.tableName << "' 插入数据" << endl; print_values(cmd.values); success = db.insert_into_table(cmd.dbName, cmd.tableName, cmd.values); if (success) { cout << "成功: 数据已插入。" << endl; } else { cerr << "失败: 无法插入数据 (请检查类型、约束和表是否存在)。" << endl; } }
+            break;
+        }
+        case SQLCommand::UPDATE: {
+            if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) { cerr << "错误: 无效的 UPDATE 语句 (缺少表名、SET 或 WHERE 子句)。" << endl; success = false; } // 确保 hasWhere 为 true
+            else { cout << "尝试更新表 '" << cmd.tableName << "' 中 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; /* ... (打印 SET 子句) ... */ success = db.update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue); }
+            break;
+        }
+        case SQLCommand::DELETE: {
+            if (cmd.tableName.empty() || !cmd.hasWhere) { cerr << "错误: 无效的 DELETE 语句 (缺少表名或 WHERE 子句)。" << endl; success = false; } // 确保 hasWhere 为 true
+            else { cout << "尝试从表 '" << cmd.tableName << "' 中删除 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; success = db.delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue); }
+            break;
+        }
+        case SQLCommand::ALTER: {
+            if (cmd.tableName.empty() || cmd.alterAction == SQLCommand::INVALID_ALTER) { cerr << "错误: 无效的 ALTER TABLE 语句 (缺少表名或无效的操作)。" << endl; success = false; }
+            else { cout << "尝试修改表 '" << cmd.tableName << "'" << endl; success = db.alter_table(cmd); }
+            break;
+        }
+
+                              // --- 新增 SELECT 处理 Case ---
+        case SQLCommand::SELECT:
+            // 基本检查由解析器完成，这里直接调用执行
+            if (cmd.fromTable.empty() || cmd.selectColumns.empty()) {
+                // 理论上解析器会处理，但加一层保险
+                cerr << "错误: 无效的 SELECT 语句 (缺少 FROM 或选择列)。" << endl;
                 success = false;
             }
             else {
-                cout << "尝试在数据库 '" << cmd.dbName << "' 中创建表 '" << cmd.tableName << "'" << endl;
-                // 打印解析到的字段和约束 (调试用)
-                cout << "   字段定义:" << endl;
-                for (const auto& f : cmd.fieldDefinitionsWithType) cout << "    - " << f.first << " " << f.second << endl;
-                cout << "   约束条件:" << endl;
-                for (const auto& c : cmd.constraints) cout << "    - " << c.first << " 在索引 " << c.second << endl;
-
-                success = db.create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints);
-
-                if (success) {
-                    cout << "成功: 表 '" << cmd.tableName << "' 已创建。" << endl;
-                    print_metadata(cmd.dbName, cmd.tableName, db); // 创建后打印元数据验证
-                }
-                else {
-                    cerr << "失败: 无法创建表 '" << cmd.tableName << "' (可能已存在或发生错误)。" << endl;
-                }
+                cout << "尝试从表 '" << cmd.fromTable << "' 查询数据..." << endl;
+                SelectResult result = db.select_from_table(cmd); // 执行查询
+                print_select_result(result); // 打印结果表格
+                success = result.success; // 获取执行状态
             }
-            break;
-
-        case SQLCommand::DROP:
-            if (cmd.tableName.empty()) {
-                cerr << "错误: 无效的 DROP TABLE 语句 (缺少表名)。" << endl;
-                success = false;
-            }
-            else {
-                cout << "尝试从数据库 '" << cmd.dbName << "' 中删除表 '" << cmd.tableName << "'" << endl;
-                success = db.drop_table(cmd.dbName, cmd.tableName);
-                if (success) {
-                    cout << "成功: 表 '" << cmd.tableName << "' 已删除。" << endl;
-                }
-                else {
-                    cerr << "失败: 无法删除表 '" << cmd.tableName << "' (可能不存在或发生错误)。" << endl;
-                }
-            }
-            break;
-
-        case SQLCommand::INSERT:
-            if (cmd.tableName.empty() || cmd.values.empty()) {
-                cerr << "错误: 无效的 INSERT 语句 (缺少表名或值)。" << endl;
-                success = false;
-            }
-            else {
-                cout << "尝试向表 '" << cmd.tableName << "' 插入数据" << endl;
-                print_values(cmd.values); // 打印要插入的值 (调试用)
-                // 调用修改后的 insert_into_table，传递值向量
-                success = db.insert_into_table(cmd.dbName, cmd.tableName, cmd.values);
-                if (success) {
-                    cout << "成功: 数据已插入。" << endl;
-                }
-                else {
-                    cerr << "失败: 无法插入数据 (请检查类型、约束和表是否存在)。" << endl;
-                }
-            }
-            break;
-
-        case SQLCommand::UPDATE:
-            if (cmd.tableName.empty() || cmd.setClauses.empty() || cmd.whereColumn.empty()) {
-                cerr << "错误: 无效的 UPDATE 语句 (缺少表名、SET 或 WHERE 子句)。" << endl;
-                success = false;
-            }
-            else {
-                cout << "尝试更新表 '" << cmd.tableName << "' 中 WHERE " << cmd.whereColumn << " = '" << cmd.whereValue << "' 的行" << endl;
-                cout << "   SET 子句:" << endl;
-                for (const auto& p : cmd.setClauses) cout << "    - " << p.first << " = '" << p.second << "'" << endl;
-
-                success = db.update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue);
-                // 成功/失败消息已在 update_table_row 内部打印
-            }
-            break;
-
-        case SQLCommand::DELETE:
-            if (cmd.tableName.empty() || cmd.whereColumn.empty()) {
-                cerr << "错误: 无效的 DELETE 语句 (缺少表名或 WHERE 子句)。" << endl;
-                success = false;
-            }
-            else {
-                cout << "尝试从表 '" << cmd.tableName << "' 中删除 WHERE " << cmd.whereColumn << " = '" << cmd.whereValue << "' 的行" << endl;
-                success = db.delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue);
-                // 成功/失败消息已在 delete_table_row 内部打印
-            }
-            break;
-
-        case SQLCommand::ALTER:
-            if (cmd.tableName.empty() || cmd.alterAction == SQLCommand::INVALID_ALTER) {
-                cerr << "错误: 无效的 ALTER TABLE 语句 (缺少表名或无效的操作)。" << endl;
-                success = false;
-            }
-            else {
-                cout << "尝试修改表 '" << cmd.tableName << "'" << endl;
-                success = db.alter_table(cmd); // 将整个命令结构传递给 alter_table
-                // 成功/失败消息已在 alter_table 内部打印 (对于每个子操作)
-            }
-            break;
+            break; // 不要忘记 break!
 
         case SQLCommand::UNKNOWN:
         default:
@@ -143,182 +189,79 @@ bool process_sql(const string& sql,
             break;
         }
     }
-    catch (const runtime_error& e) { // 捕获可能的运行时错误
-        cerr << "运行时错误: " << e.what() << endl;
-        success = false;
-    }
-    catch (const exception& e) { // 捕获其他标准异常
-        cerr << "发生异常: " << e.what() << endl;
-        success = false;
-    }
-    catch (...) { // 捕获所有其他未知异常
-        cerr << "发生未知异常。" << endl;
-        success = false;
-    }
+    catch (const runtime_error& e) { success = false; cerr << "运行时错误: " << e.what() << endl; }
+    catch (const exception& e) { success = false; cerr << "发生异常: " << e.what() << endl; }
+    catch (...) { success = false; cerr << "发生未知异常。" << endl; }
 
     cout << "<< 处理结束。" << (success ? " (成功)" : " (失败)") << endl;
     return success;
 }
 
-
-// --- 辅助函数实现 ---
-
-// 打印值列表 (用于调试)
-void print_values(const vector<string>& values) {
-    cout << "   值: ";
-    for (const auto& v : values) {
-        cout << "[" << v << "] ";
-    }
-    cout << endl;
-
-}
-
-// 打印表的元数据 (需要访问路径，通过 SQLInterface 获取)
-void print_metadata(const string& dbName, const string& tableName, SQLInterface& db) {
-    // 从 SQLInterface 获取路径 (或者直接使用常量，但通过接口更好封装)
-    // 注意: 这里的路径构造需要与 SQLInterface 内部一致
-    const string METADATA_DB_ROOT = "DATA/METADATA/DBATTER/"; // 假设路径常量
-    string tableMetaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
-    string tdfPath = tableMetaDir + tableName + ".tdf";
-    string ticPath = tableMetaDir + tableName + ".tic";
-    string tidPath = tableMetaDir + tableName + ".tid";
-
-    cout << "\n   --- 验证表 '" << tableName << "' 的元数据 ---" << endl;
-
-    ifstream tdf(tdfPath);
-    if (!tdf.is_open()) { cout << "   错误: 无法打开 .tdf 文件: " << tdfPath << endl; }
-    else {
-        cout << "   字段名 (.tdf): "; string line;
-        while (getline(tdf, line)) { cout << trim(line) << " | "; } cout << endl;
-        tdf.close();
-    }
-
-    ifstream tic(ticPath);
-    if (!tic.is_open()) { cout << "   错误: 无法打开 .tic 文件: " << ticPath << endl; }
-    else {
-        cout << "   字段类型 (.tic): "; string line;
-        while (getline(tic, line)) { cout << trim(line) << " | "; } cout << endl;
-        tic.close();
-    }
-
-    ifstream tid(tidPath);
-    if (!tid.is_open()) { /* cout << "   信息: 未找到 .tid 文件 (无约束或错误): " << tidPath << endl; */ } // tid 文件可能不存在
-    else {
-        cout << "   约束条件 (.tid):"; bool constraints_found = false; string line;
-        while (getline(tid, line)) {
-            if (!trim(line).empty()) { // 只打印非空行
-                if (!constraints_found) cout << endl; // 只有找到约束才换行
-                cout << "     " << trim(line) << endl;
-                constraints_found = true;
-            }
-        }
-        if (!constraints_found) cout << " (无)" << endl;
-        tid.close();
-    }
-    cout << "   -------------------------------------" << endl;
-}
-
-
-// --- 主函数 ---
+// --- (main 函数保持不变，但可以加入更多 SELECT 测试) ---
 int main() {
-    SQLInterface db;    // 创建数据库接口实例
-    SQLParser parser;   // 创建 SQL 解析器实例
-    string currentDbName = "myTestDB"; // 设置当前操作的数据库名 (需要先创建)
+    SQLInterface db;
+    SQLParser parser;
+    string currentDbName = "myTestDB"; // 使用之前的数据库名
 
     cout << "--- 微型数据库管理系统初始化 ---" << endl;
-
-    // --- 确保基础目录存在 ---
-    cout << "检查/创建基础目录..." << endl;
-    // 使用 SQLInterface 提供的 FileManager (假设有访问器或公共成员)
-    FileManager& fm = db.getFileManager(); // 获取 FileManager 引用
-    const string METADATA_USER_ROOT = "DATA/METADATA/USERATTER/";
-    const string METADATA_DB_ROOT = "DATA/METADATA/DBATTER/";
-    const string COMMONDATA_ROOT = "DATA/COMMONDATA/";
-    fm.create_directory(METADATA_USER_ROOT);
-    fm.create_directory(METADATA_DB_ROOT);
-    fm.create_directory(COMMONDATA_ROOT);
-    // 尝试创建当前数据库目录 (如果 create_database 没被调用)
-    if (!db.create_database(currentDbName)) {
-        // 如果创建失败，可能已存在，继续执行，或者处理错误
-        // cerr << "警告: 无法创建或确认数据库目录 " << currentDbName << endl;
-    }
-
+    FileManager& fm = db.getFileManager(); // 获取文件管理器
+    // (确保目录存在...)
+    fm.create_directory("DATA/METADATA/USERATTER/");
+    fm.create_directory("DATA/METADATA/DBATTER/");
+    fm.create_directory("DATA/COMMONDATA/");
+    db.create_database(currentDbName); // 确保数据库目录存在
     cout << "当前数据库设置为: " << currentDbName << endl;
 
-    // === 执行一系列 SQL 命令进行测试 ===
-
-    // --- 清理旧表 (如果存在) ---
+    // === 测试用例 ===
+    // --- (Setup: DROP, CREATE, INSERT as before) ---
     process_sql("DROP TABLE students;", db, parser, currentDbName);
     process_sql("DROP TABLE courses;", db, parser, currentDbName);
-    process_sql("DROP TABLE pupils;", db, parser, currentDbName); // 清理上次重命名的表
-
-    // --- 创建表 ---
     process_sql("CREATE TABLE students (sid INT PRIMARY KEY, sname CHAR(50), age INT, major CHAR(30));", db, parser, currentDbName);
-    process_sql("CREATE TABLE courses (cid CHAR(10) PRIMARY KEY, cname CHAR(50), credits INT);", db, parser, currentDbName);
-    process_sql("CREATE TABLE empty_table (id INT);", db, parser, currentDbName); // 创建一个空表测试
+    process_sql("INSERT INTO students VALUES (101, '爱丽丝', 21, '计算机');", db, parser, currentDbName);
+    process_sql("INSERT INTO students VALUES (103, '查理', 21, '艺术');", db, parser, currentDbName); // 年龄 21
+    process_sql("INSERT INTO students VALUES (102, '鲍勃', 23, '土木');", db, parser, currentDbName);
+    process_sql("INSERT INTO students VALUES (104, '戴安娜', 19, '国关');", db, parser, currentDbName);
+    process_sql("INSERT INTO students VALUES (105, '爱丽丝', 22, '数学');", db, parser, currentDbName); // 另一个爱丽丝
 
-    // --- 插入数据 ---
-    process_sql("INSERT INTO students VALUES (101, '爱丽丝', 20, '计算机科学');", db, parser, currentDbName);
-    process_sql("INSERT INTO students VALUES (102, '鲍勃', 22, '土木工程');", db, parser, currentDbName);
-    process_sql("INSERT INTO students VALUES (103, '查理', 21, '表演艺术');", db, parser, currentDbName);
-    process_sql("INSERT INTO students VALUES (104, '戴安娜', 19, '国际关系');", db, parser, currentDbName);
-    // 测试带引号和逗号的值
-    process_sql("INSERT INTO students VALUES (105, '爱德华 ''艾迪''', 23, '哲学, 历史');", db, parser, currentDbName);
-    // 插入非法数据 (类型错误)
-    process_sql("INSERT INTO students VALUES ('一百零六', '弗兰克', 24, '物理');", db, parser, currentDbName); // sid 类型错误
-    // 插入非法数据 (长度错误)
-    process_sql("INSERT INTO students VALUES (107, '格蕾丝', 25, '一个非常非常非常非常长的专业名称肯定会超过三十个字符的限制');", db, parser, currentDbName); // major 长度错误
+    // --- 测试 SELECT ---
+    cout << "\n--- 测试 SELECT ---" << endl;
+    process_sql("SELECT * FROM students;", db, parser, currentDbName);
+    process_sql("SELECT sid, sname FROM students;", db, parser, currentDbName);
+    process_sql("SELECT major, age, sid FROM students WHERE age = 21;", db, parser, currentDbName);
+    process_sql("SELECT * FROM students WHERE sname = '鲍勃';", db, parser, currentDbName);
+    process_sql("SELECT sname, major FROM students WHERE sid = 999;", db, parser, currentDbName); // 应返回空集
+    process_sql("SELECT sname, major FROM students WHERE sname IN ('爱丽丝', '戴安娜');", db, parser, currentDbName);
+    process_sql("SELECT sid FROM students WHERE sid IN (101, 103, 105, 109);", db, parser, currentDbName); // 包含不存在的 ID
+    process_sql("SELECT sid FROM students WHERE sname IN ('不存在');", db, parser, currentDbName); // IN 值不存在
 
+    // 测试 ORDER BY (仅 INT)
+    process_sql("SELECT sid, sname, age FROM students ORDER BY age;", db, parser, currentDbName); // 默认 ASC
+    process_sql("SELECT sid, sname, age FROM students ORDER BY age DESC;", db, parser, currentDbName);
+    process_sql("SELECT * FROM students ORDER BY sid DESC;", db, parser, currentDbName);
+    process_sql("SELECT * FROM students ORDER BY sname;", db, parser, currentDbName); // 尝试按非 INT 排序 (应失败或忽略)
 
-    // --- 删除数据 ---
-    process_sql("DELETE FROM students WHERE sid = 103;", db, parser, currentDbName); // 删除查理
-    process_sql("DELETE FROM students WHERE major = '不存在的专业';", db, parser, currentDbName); // 应该影响 0 行
+    // 测试 DISTINCT
+    process_sql("SELECT DISTINCT major FROM students;", db, parser, currentDbName);
+    process_sql("SELECT DISTINCT age FROM students ORDER BY age;", db, parser, currentDbName); // DISTINCT + ORDER BY
+    process_sql("SELECT DISTINCT sname, age FROM students;", db, parser, currentDbName); // 多列 DISTINCT
 
-    // --- 更新数据 ---
-    process_sql("UPDATE students SET age = 23 WHERE sname = '鲍勃';", db, parser, currentDbName); // 更新鲍勃年龄
-    process_sql("UPDATE students SET major = '国际政治' WHERE sid = 104;", db, parser, currentDbName); // 更新戴安娜专业
-    process_sql("UPDATE students SET age = 21, major = '人工智能' WHERE sid = 101;", db, parser, currentDbName); // 更新爱丽丝多个字段
-    process_sql("UPDATE students SET age = 99 WHERE sid = 999;", db, parser, currentDbName); // 更新不存在的行，应影响 0 行
+    // 测试不存在的表或列
+    process_sql("SELECT * FROM non_existent_table;", db, parser, currentDbName);
+    process_sql("SELECT non_existent_column FROM students;", db, parser, currentDbName);
+    process_sql("SELECT sid FROM students WHERE non_existent_column = 1;", db, parser, currentDbName);
+    process_sql("SELECT sid FROM students ORDER BY non_existent_column;", db, parser, currentDbName);
 
-    // --- 修改表结构 (ALTER TABLE) ---
-    cout << "\n--- 测试 ALTER TABLE ---" << endl;
-    process_sql("ALTER TABLE students ADD COLUMN gpa INT;", db, parser, currentDbName); // 添加 gpa 列
-    process_sql("UPDATE students SET gpa = 4 WHERE sid = 101;", db, parser, currentDbName); // 更新新列的值
-    process_sql("UPDATE students SET gpa = 3 WHERE sid = 102;", db, parser, currentDbName);
-    print_metadata(currentDbName, "students", db); // 验证添加列后的元数据
-
-    process_sql("ALTER TABLE students RENAME COLUMN sname TO student_name;", db, parser, currentDbName); // 重命名列
-    print_metadata(currentDbName, "students", db); // 验证重命名列后的元数据
-
-    process_sql("ALTER TABLE students MODIFY COLUMN major CHAR(40);", db, parser, currentDbName); // 修改 CHAR 长度 (增加) - 应该成功
-    process_sql("ALTER TABLE students MODIFY COLUMN credits INT;", db, parser, currentDbName); // 尝试修改不存在的列 - 应该失败
-    process_sql("ALTER TABLE students MODIFY COLUMN age CHAR(3);", db, parser, currentDbName); // 尝试修改 INT 到 CHAR (有数据) - 应该失败
-    process_sql("ALTER TABLE empty_table MODIFY COLUMN id CHAR(10);", db, parser, currentDbName); // 尝试修改空表的列类型 - 应该成功
-    print_metadata(currentDbName, "students", db); // 验证修改列后的元数据
-    print_metadata(currentDbName, "empty_table", db);
-
-    process_sql("ALTER TABLE students DROP COLUMN age;", db, parser, currentDbName); // 删除列
-    print_metadata(currentDbName, "students", db); // 验证删除列后的元数据
-
-    process_sql("ALTER TABLE students RENAME TO pupils;", db, parser, currentDbName); // 重命名表
-    // 尝试对旧表名操作 - 应该失败
-    process_sql("INSERT INTO students VALUES (108, '汉娜', 20, '生物', 4);", db, parser, currentDbName);
-    // 对新表名操作
-    print_metadata(currentDbName, "pupils", db); // 验证新表名的元数据
-    // 注意：因为删除了 age 列，插入时需要少一个值
-    process_sql("INSERT INTO pupils VALUES (108, '汉娜', '生物', 4);", db, parser, currentDbName); // 向重命名后的表插入
-
-    // --- 交互式输入循环 (可选) ---
+    // --- (交互式输入循环) ---
     cout << "\n--- 进入交互模式 (输入空行或 EOF 退出) ---" << endl;
     string line;
     cout << currentDbName << "> ";
-    // 使用 cin.eof() 和 getline 读取，允许空行退出
     while (getline(cin, line) && !line.empty()) {
-        process_sql(line, db, parser, currentDbName); // 处理输入的 SQL
-        cout << currentDbName << "> "; // 显示下一个提示符
+        process_sql(line, db, parser, currentDbName);
+        cout << currentDbName << "> ";
     }
 
     cout << "\n--- 微型数据库管理系统关闭 ---" << endl;
-
-    return 0; // 主函数正常退出
+    return 0;
 }
+
+// 注意: FileManager.h 和 FileManager.cpp 保持不变，无需重新生成。

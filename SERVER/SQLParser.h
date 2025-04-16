@@ -7,77 +7,70 @@
 #include <regex>
 #include <sstream>
 #include <map>
-#include <variant> // 用于 ALTER 操作选项
+#include <variant>
+#include <algorithm> // 需要包含 <algorithm> for find_if_not
+#include <cctype>    // 需要包含 <cctype> for ::isspace
 
-// 定义 SQL 命令结构体，表示解析后的 SQL 操作及其相关参数
+// 前向声明 SelectResult (如果其他地方需要，但通常在接口头文件中定义)
+// namespace dbms { struct SelectResult; } // 这里暂时不需要
+
+// (保持之前的内联 trim 函数)
+inline std::string trim(const std::string& str) {
+    auto is_space_safe = [](unsigned char ch) { return ::isspace(ch); };
+    auto first = std::find_if_not(str.begin(), str.end(), is_space_safe);
+    if (first == str.end()) { return ""; }
+    auto last = std::find_if_not(str.rbegin(), str.rend(), is_space_safe).base();
+    return std::string(first, last);
+}
+
+// 定义 SQL 命令结构体
 struct SQLCommand {
     // 基本命令类型枚举
     enum CommandType {
-        INSERT,     // 插入
-        CREATE,     // 创建表
-        DROP,       // 删除表
-        UPDATE,     // 更新
-        DELETE,     // 删除
-        ALTER,      // 修改表
-        UNKNOWN     // 未知或错误
+        INSERT, CREATE, DROP, UPDATE, DELETE, ALTER,
+        SELECT, // <-- 新增 SELECT 类型
+        UNKNOWN
     } type = UNKNOWN; // 操作类型, 默认为未知
 
-    // 通用字段
-    std::string tableName;  // 表名
-    std::string dbName;     // 数据库名 (用于上下文)
+    // --- 通用字段 ---
+    std::string tableName;  // 主要用于 DDL (CREATE, DROP, ALTER) 和部分 DML
+    std::string dbName;     // 数据库上下文
 
-    // INSERT 特定字段
+    // --- INSERT 特定字段 ---
     std::vector<std::string> values; // 插入时的字段值列表
 
-    // CREATE 特定字段
+    // --- CREATE 特定字段 ---
     std::vector<std::pair<std::string, std::string>> fieldDefinitionsWithType; // 字段定义列表 {字段名, 字段类型}
-    std::map<std::string, int> constraints; // 约束条件映射 (约束类型 -> 字段索引, 例如 {"primary_key", 0})
+    std::map<std::string, int> constraints; // 约束条件映射 (约束类型 -> 字段索引)
 
-    // UPDATE 特定字段
+    // --- UPDATE 特定字段 ---
     std::vector<std::pair<std::string, std::string>> setClauses; // SET 子句列表 {列名, 新值}
 
-    // UPDATE/DELETE 特定字段 (WHERE 字段 = 值)
-    std::string whereColumn; // WHERE 子句中的字段名
-    std::string whereValue;  // WHERE 子句中的比较值
+    // --- UPDATE/DELETE/SELECT 的 WHERE 子句字段 ---
+    bool hasWhere = false;          // 标记是否有 WHERE 子句
+    std::string whereClauseStr;     // 存储原始 WHERE 子句字符串 (用于解析)
+    std::string whereColumn;        // WHERE 列名 (用于 = 和 IN)
+    std::string whereValue;         // WHERE = 的比较值
+    bool useInClause = false;       // 标记 WHERE 子句是否使用 IN
+    std::vector<std::string> inValues; // WHERE IN (...) 的值列表
 
     // --- ALTER 特定字段 ---
-    // ALTER TABLE 操作的具体类型
-    enum AlterAction {
-        RENAME_TABLE,   // 重命名表
-        ADD_COLUMN,     // 添加列
-        DROP_COLUMN,    // 删除列
-        MODIFY_COLUMN,  // 修改列定义
-        RENAME_COLUMN,  // 重命名列
-        INVALID_ALTER   // 无效的 ALTER 操作
+    enum AlterAction { // ALTER TABLE 操作的具体类型
+        RENAME_TABLE, ADD_COLUMN, DROP_COLUMN, MODIFY_COLUMN, RENAME_COLUMN, INVALID_ALTER
     } alterAction = INVALID_ALTER; // ALTER 操作类型, 默认为无效
-
-    // 不同 ALTER 操作使用的字段
     std::string newTableName;     // 用于 RENAME TABLE
     std::string columnName;       // 用于 ADD, DROP, MODIFY, RENAME (旧列名)
     std::string columnDefinition; // 用于 ADD (如 "age INT"), MODIFY (新类型定义)
     std::string newColumnName;    // 用于 RENAME COLUMN (新列名)
 
+    // --- SELECT 特定字段 ---
+    std::vector<std::string> selectColumns; // 要选择的列名列表 ("*" 表示所有列)
+    std::string fromTable;                  // FROM 子句指定的表名
+    bool distinct = false;                  // 是否使用 DISTINCT 关键字去重
+    std::string orderByColumn;              // ORDER BY 子句指定的排序列名 (如果为空则不排序)
+    enum SortOrder { ASC, DESC } sortOrder = ASC; // 排序顺序 (默认 ASC 升序)
+
 };
-
-// +++ 修改 trim 函数定义 +++
-inline std::string trim(const std::string& str) {
-    // 谓词：检查一个字符是否是空白符，安全地处理各种 char 值
-    auto is_space_safe = [](unsigned char ch) { // 使用 lambda 包装 isspace
-        return ::isspace(ch);
-        };
-
-    // 找到第一个非空白字符
-    auto first = std::find_if_not(str.begin(), str.end(), is_space_safe);
-    if (first == str.end()) {
-        return ""; // 如果字符串全为空白或为空，返回空字符串
-    }
-
-    // 找到最后一个非空白字符 (从后往前找)
-    // 注意：需要使用 .base() 来获取对应的正向迭代器
-    auto last = std::find_if_not(str.rbegin(), str.rend(), is_space_safe).base();
-
-    return std::string(first, last); // 构造子字符串
-}
 
 // SQL 解析器类
 class SQLParser {
@@ -86,14 +79,17 @@ public:
     SQLCommand parse(const std::string& sql);
 
 private:
-    // 分割逗号分隔的字符串值 (处理引号)
+    // (保持现有的私有辅助函数)
     std::vector<std::string> split_values(const std::string& input);
-    // 解析 CREATE TABLE 语句中的字段定义
     void parse_field_definitions(const std::string& fieldDefs, SQLCommand& cmd);
-    // 辅助函数：解析 UPDATE 语句中的 SET 子句
     void parse_set_clause(const std::string& setClauseStr, SQLCommand& cmd);
-    // 辅助函数：解析 WHERE 字段=值 子句
+
+    // 修改 parse_where_clause 以支持 IN 子句
     bool parse_where_clause(const std::string& whereClauseStr, SQLCommand& cmd);
+
+    // 新增 SELECT 解析辅助函数
+    void parse_select_list(const std::string& selectListStr, SQLCommand& cmd); // 解析 SELECT 的列列表
+    bool parse_order_by_clause(const std::string& orderByStr, SQLCommand& cmd); // 解析 ORDER BY 子句
 };
 
 #endif // SQLPARSER_H

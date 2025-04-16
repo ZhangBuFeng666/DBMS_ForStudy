@@ -1,6 +1,3 @@
-
-#include "SQLParser.h" // 包含 SQLParser 定义
-
 #include "SQLInterface.h"
 #include <fstream>
 #include <iostream>
@@ -11,7 +8,8 @@
 #include <regex>
 #include <stdexcept> // 用于抛出异常
 #include <algorithm> // 用于 std::remove, std::transform
-
+#include <set>       // 用于 std::set (实现 distinct 的另一种方式，这里没用)
+#include <map>       // 用于列名到索引的映射
 
 
 // 确保命名空间被使用
@@ -437,3 +435,336 @@ bool SQLInterface::validateValueType(const string& type, const string& value) { 
     else if (type == "BOOL") { string lowerVal = value; transform(lowerVal.begin(), lowerVal.end(), lowerVal.begin(), ::tolower); return lowerVal == "true" || lowerVal == "false" || lowerVal == "1" || lowerVal == "0"; }
     cerr << "警告: 未知的字段类型用于值校验: " << type << endl; return false;
 }
+
+
+// --- 新增 SELECT 实现 ---
+SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
+    SelectResult result; // 初始化结果对象
+    if (cmd.type != SQLCommand::SELECT) {
+        result.success = false;
+        result.errorMessage = "内部错误: select_from_table 收到非 SELECT 命令。";
+        return result;
+    }
+    if (cmd.fromTable.empty()) {
+        result.success = false;
+        result.errorMessage = "错误: SELECT 语句缺少 FROM 子句或表名无效。";
+        return result;
+    }
+    if (cmd.selectColumns.empty()) {
+        result.success = false;
+        result.errorMessage = "错误: SELECT 语句缺少选择列或 '*'。";
+        return result;
+    }
+
+    cout << "调试: 开始执行 SELECT 查询，目标表: '" << cmd.fromTable << "'" << endl;
+
+    // --- 1. 检查文件和加载元数据 ---
+    string metaDir = METADATA_DB_ROOT + cmd.dbName + "/" + cmd.fromTable + "/";
+    string tdfPath = metaDir + cmd.fromTable + ".tdf"; // 列名文件
+    string ticPath = metaDir + cmd.fromTable + ".tic"; // 类型文件
+    string dataPath = COMMONDATA_ROOT + cmd.fromTable + ".trd"; // 数据文件
+
+    // 检查元数据文件是否存在
+    if (!fs::exists(tdfPath) || !fs::exists(ticPath)) {
+        result.success = false;
+        result.errorMessage = "错误: 找不到表 '" + cmd.fromTable + "' 的元数据文件 (.tdf 或 .tic)。";
+        return result;
+    }
+    // 检查数据文件是否存在（不存在视为表为空，是正常情况）
+    bool dataFileExists = fs::exists(dataPath);
+    if (!dataFileExists) {
+        cout << "信息: 数据文件 '" << dataPath << "' 不存在，表可能为空。" << endl;
+    }
+
+    // 读取所有列名和类型
+    vector<string> allColumns = readLinesFromFile(tdfPath);
+    vector<string> allTypes = readLinesFromFile(ticPath);
+    if (allColumns.empty()) { // TDF 不应为空
+        result.success = false;
+        result.errorMessage = "错误: 表 '" + cmd.fromTable + "' 的列定义文件 (.tdf) 为空或读取失败。";
+        return result;
+    }
+    if (allColumns.size() != allTypes.size()) { // 列名和类型数量必须一致
+        result.success = false;
+        result.errorMessage = "错误: 表 '" + cmd.fromTable + "' 的元数据文件 (.tdf 与 .tic) 列数不匹配。";
+        return result;
+    }
+
+    // 创建列名到索引的映射 (使用 trim 后的列名)
+    map<string, int> colNameToIndex;
+    cout << "调试: 加载表 '" << cmd.fromTable << "' 的列定义: ";
+    for (size_t i = 0; i < allColumns.size(); ++i) {
+        string trimmedColName = trim(allColumns[i]);
+        if (trimmedColName.empty()) {
+            result.success = false;
+            result.errorMessage = "错误: 表 '" + cmd.fromTable + "' 的 .tdf 文件中包含空或无效的列名。";
+            return result;
+        }
+        colNameToIndex[trimmedColName] = static_cast<int>(i);
+        cout << trimmedColName << "(" << trim(allTypes[i]) << ")" << (i == allColumns.size() - 1 ? "" : ", ");
+    }
+    cout << endl;
+
+    // --- 2. 确定要选择的列和它们的索引 ---
+    vector<string> selectedColumnsNames; // 最终选择的列名 (保持用户请求的顺序)
+    vector<int> selectedColumnIndices;   // 对应列在原始表(allColumns)中的索引
+
+    if (cmd.selectColumns.size() == 1 && cmd.selectColumns[0] == "*") {
+        // 选择所有列
+        cout << "调试: 选择所有列 (*)。" << endl;
+        for (const string& col : allColumns) { // 使用从 TDF 读取的原始列名
+            selectedColumnsNames.push_back(trim(col)); // 存储 trim 后的名字
+        }
+        for (size_t i = 0; i < allColumns.size(); ++i) {
+            selectedColumnIndices.push_back(static_cast<int>(i));
+        }
+    }
+    else {
+        // 选择指定列
+        string selectedColsStr; // 调试用
+        set<string> alreadyAdded; // 用于检查重复选择
+        for (const string& reqCol : cmd.selectColumns) {
+            string trimmedReqCol = trim(reqCol);
+            if (colNameToIndex.count(trimmedReqCol)) { // 检查列是否存在
+                if (alreadyAdded.find(trimmedReqCol) == alreadyAdded.end()) { // 检查是否已添加
+                    selectedColumnsNames.push_back(trimmedReqCol); // 存储请求的列名
+                    selectedColumnIndices.push_back(colNameToIndex[trimmedReqCol]); // 存储对应的原始索引
+                    alreadyAdded.insert(trimmedReqCol);
+                    selectedColsStr += (selectedColsStr.empty() ? "" : ", ") + trimmedReqCol;
+                }
+                else {
+                    cout << "警告: 列 '" << trimmedReqCol << "' 在 SELECT 列表中重复，将被忽略。" << endl;
+                }
+            }
+            else { // 请求的列不存在
+                result.success = false;
+                result.errorMessage = "错误: 选择的列 '" + reqCol + "' 在表 '" + cmd.fromTable + "' 中不存在。";
+                return result;
+            }
+        }
+        cout << "调试: 选择指定列: " << selectedColsStr << endl;
+    }
+
+    // 设置结果的 header (总是设置，即使表为空)
+    result.header = selectedColumnsNames;
+
+    // 如果数据文件不存在，此时已设置好 header，可以直接返回空结果集
+    if (!dataFileExists) {
+        result.success = true;
+        cout << "调试: 数据文件不存在，返回空结果集。" << endl;
+        return result; // 返回成功和空数据
+    }
+
+    // --- 3. 读取数据并过滤 (WHERE) ---
+    vector<vector<string>> filteredData; // 存储通过 WHERE 过滤后的 *完整* 行数据
+    vector<string> lines = readLinesFromFile(dataPath);
+    int whereColIndex = -1; // WHERE 条件列在原始表(allColumns)中的索引
+
+    // 如果有 WHERE 子句，预先查找条件列索引
+    if (cmd.hasWhere) {
+        string whereColTrimmed = trim(cmd.whereColumn);
+        if (!colNameToIndex.count(whereColTrimmed)) { // 使用 trim 后的列名查找
+            result.success = false;
+            result.errorMessage = "错误: WHERE 子句中的列 '" + cmd.whereColumn + "' 在表中不存在。";
+            return result;
+        }
+        whereColIndex = colNameToIndex[whereColTrimmed];
+        cout << "调试: WHERE 条件列 '" << whereColTrimmed << "' 索引为 " << whereColIndex << endl;
+    }
+    else {
+        cout << "调试: 无 WHERE 子句，将处理所有行。" << endl;
+    }
+
+    cout << "调试: 开始读取和过滤数据行..." << endl;
+    int lineNum = 0;
+    for (const string& line : lines) {
+        lineNum++;
+        if (line.empty()) continue; // 跳过空行
+
+        vector<string> rawValues = parseCsvRow(line); // 解析整行数据
+        // 检查解析后的列数是否与元数据匹配
+        if (rawValues.size() != allColumns.size()) {
+            cerr << "警告 (行 " << lineNum << "): 数据行 '" << line << "' 的列数 (" << rawValues.size()
+                << ") 与表定义 (" << allColumns.size() << ") 不符，已跳过。" << endl;
+            continue; // 跳过格式错误的行
+        }
+
+        // 应用 WHERE 条件过滤
+        bool keepRow = true; // 默认保留该行
+        if (cmd.hasWhere) {
+            if (whereColIndex < 0 || whereColIndex >= rawValues.size()) {
+                // 理论上不应发生
+                cerr << "内部错误 (行 " << lineNum << "): WHERE 列索引 " << whereColIndex << " 无效。" << endl;
+                keepRow = false; // 跳过此行
+            }
+            else {
+                string& valueToCheck = rawValues[whereColIndex]; // 获取待检查的值
+                if (cmd.useInClause) {
+                    // 处理 WHERE ... IN (...)
+                    bool foundInList = false;
+                    // cout << "调试 (行 " << lineNum << "): 检查 '" << valueToCheck << "' 是否在 IN 列表中..." << endl;
+                    for (const string& inVal : cmd.inValues) {
+                        // **重要**: 当前是字符串比较。对于数字等需要类型转换比较！
+                        if (valueToCheck == inVal) {
+                            foundInList = true;
+                            // cout << "调试 (行 " << lineNum << "): 匹配到 IN 值 '" << inVal << "'" << endl;
+                            break;
+                        }
+                    }
+                    if (!foundInList) {
+                        keepRow = false; // 不在 IN 列表中，则不保留
+                    }
+                }
+                else {
+                    // 处理 WHERE ... = ...
+                     // cout << "调试 (行 " << lineNum << "): 检查 '" << valueToCheck << "' 是否等于 '" << cmd.whereValue << "'" << endl;
+                    // **重要**: 当前是字符串比较。
+                    if (valueToCheck != cmd.whereValue) {
+                        keepRow = false; // 不相等，则不保留
+                    }
+                }
+            }
+        } // 结束 if (cmd.hasWhere)
+
+        if (keepRow) {
+            // cout << "调试 (行 " << lineNum << "): 行通过过滤，保留。" << endl;
+            filteredData.push_back(rawValues); // 保留符合条件的 *完整* 原始行数据
+        }
+    } // 结束 for each line
+    cout << "调试: 数据过滤完成，保留 " << filteredData.size() << " 行。" << endl;
+
+    // --- 4. 投影 (根据 selectedColumnIndices 选择需要的列) ---
+    vector<vector<string>> projectedData; // 存储最终结果数据 (只包含选择的列)
+    projectedData.reserve(filteredData.size());
+    cout << "调试: 开始投影选择的列..." << endl;
+    for (const auto& rawRow : filteredData) {
+        vector<string> projectedRow;
+        projectedRow.reserve(selectedColumnIndices.size());
+        for (int index : selectedColumnIndices) { // 遍历需要选择的列的原始索引
+            if (index >= 0 && index < rawRow.size()) {
+                projectedRow.push_back(rawRow[index]); // 从原始行中取出对应索引的值
+            }
+            else {
+                // 索引无效，这通常是内部逻辑错误
+                cerr << "内部错误: 投影时列索引 " << index << " 无效。" << endl;
+                projectedRow.push_back("投影错误"); // 添加错误标记，或抛出异常
+            }
+        }
+        projectedData.push_back(projectedRow); // 添加投影后的行到结果集
+    }
+    cout << "调试: 投影完成。" << endl;
+
+
+    // --- 5. 排序 (ORDER BY) ---
+    if (!cmd.orderByColumn.empty()) {
+        cout << "调试: 检测到 ORDER BY 子句，列: '" << cmd.orderByColumn << "', 顺序: " << (cmd.sortOrder == SQLCommand::ASC ? "ASC" : "DESC") << endl;
+        int sortColIndexInProjected = -1; // 排序依据列在 *投影后* 结果集(projectedData)中的索引
+        string sortColOriginalType = "UNKNOWN"; // 排序依据列的原始数据类型
+
+        // 查找排序列在投影结果头(result.header)中的索引
+        for (size_t i = 0; i < result.header.size(); ++i) {
+            if (result.header[i] == cmd.orderByColumn) {
+                sortColIndexInProjected = static_cast<int>(i);
+                break;
+            }
+        }
+
+        if (sortColIndexInProjected == -1) {
+            // 这通常不应发生，因为解析阶段已检查过列名存在性
+            result.success = false;
+            result.errorMessage = "内部错误: ORDER BY 列 '" + cmd.orderByColumn + "' 在投影结果中未找到。";
+            return result;
+        }
+
+        // 获取排序列的原始数据类型 (需要原始索引)
+        if (colNameToIndex.count(cmd.orderByColumn)) {
+            int originalIndex = colNameToIndex[cmd.orderByColumn];
+            if (originalIndex >= 0 && originalIndex < allTypes.size()) {
+                sortColOriginalType = trim(allTypes[originalIndex]);
+                cout << "调试:排序列 '" << cmd.orderByColumn << "' 的原始类型为: " << sortColOriginalType << endl;
+            }
+        }
+
+        // 检查排序类型是否为 INT (按你的要求)
+        if (sortColOriginalType != "INT") {
+            result.success = false; // 或者可以改为警告并忽略排序
+            result.errorMessage = "错误: ORDER BY 目前仅支持对 INT 类型列排序，列 '" + cmd.orderByColumn + "' 类型为 " + sortColOriginalType + "。";
+            cerr << result.errorMessage << endl; // 同时输出到 cerr
+            // 选择忽略排序而不是返回错误
+            cout << "警告: 将忽略 ORDER BY 子句。" << endl;
+            // return result; // 如果要严格报错，取消注释这行
+        }
+        else { // 类型为 INT，执行排序
+            cout << "调试: 按 INT 列索引 " << sortColIndexInProjected << " (" << cmd.orderByColumn << ") 排序..." << endl;
+            try {
+                std::sort(projectedData.begin(), projectedData.end(),
+                    [&](const vector<string>& rowA, const vector<string>& rowB) {
+                        // 安全检查索引
+                        if (sortColIndexInProjected >= rowA.size() || sortColIndexInProjected >= rowB.size()) {
+                            cerr << "内部警告: 排序比较时索引越界。" << endl;
+                            return false; // 保持原有相对顺序
+                        }
+
+                        // 尝试将字符串转换为整数进行比较
+                        int valA = 0, valB = 0;
+                        bool convA_ok = false, convB_ok = false;
+                        try { valA = stoi(trim(rowA[sortColIndexInProjected])); convA_ok = true; }
+                        catch (...) {}
+                        try { valB = stoi(trim(rowB[sortColIndexInProjected])); convB_ok = true; }
+                        catch (...) {}
+
+                        // 处理转换失败的情况: 无法转换的排在后面
+                        if (!convA_ok && !convB_ok) return false; // 都失败，保持顺序
+                        if (!convA_ok) return (cmd.sortOrder == SQLCommand::DESC); // A 失败，放后面 (升序时 false, 降序时 true)
+                        if (!convB_ok) return (cmd.sortOrder == SQLCommand::ASC);  // B 失败，放后面 (升序时 true, 降序时 false)
+
+                        // 都成功转换，正常比较
+                        if (cmd.sortOrder == SQLCommand::ASC) {
+                            return valA < valB; // 升序
+                        }
+                        else {
+                            return valA > valB; // 降序
+                        }
+                    }); // 结束 std::sort lambda
+                cout << "调试: 排序完成。" << endl;
+            }
+            catch (const std::exception& e) {
+                // 捕获 sort 过程中可能出现的意外异常 (理论上 lambda 已处理)
+                result.success = false;
+                result.errorMessage = "错误: 排序过程中发生异常: " + string(e.what());
+                cerr << result.errorMessage << endl;
+                return result;
+            }
+        } // 结束 else (类型为 INT)
+
+    } // 结束 if (!cmd.orderByColumn.empty())
+
+
+    // --- 6. DISTINCT ---
+    if (cmd.distinct) {
+        cout << "调试: 应用 DISTINCT..." << endl;
+        if (!projectedData.empty()) {
+            // 为了使用 std::unique，数据需要先排序。
+            // 如果用户指定了 ORDER BY，数据可能已经是部分有序的，但 unique 需要完全有序。
+            // 为了确保正确性，我们总是对整个行向量进行排序（使用默认的 vector<string> 比较）
+            std::sort(projectedData.begin(), projectedData.end());
+            cout << "调试: 为 DISTINCT 临时排序完成。" << endl;
+
+            // 使用 std::unique 将重复的相邻元素移动到容器末尾，并返回指向第一个重复元素的迭代器
+            auto last = std::unique(projectedData.begin(), projectedData.end());
+
+            // 使用 erase 删除从 last 到末尾的所有重复元素
+            projectedData.erase(last, projectedData.end());
+            cout << "调试: DISTINCT 处理后剩余 " << projectedData.size() << " 行。" << endl;
+        }
+    } // 结束 if (cmd.distinct)
+
+
+    // --- 7. 设置最终结果 ---
+    result.success = true;
+    result.data = projectedData; // 将最终处理后的数据放入结果对象
+
+    cout << "调试: SELECT 查询执行成功，返回 " << result.data.size() << " 行数据。" << endl;
+    return result;
+}
+

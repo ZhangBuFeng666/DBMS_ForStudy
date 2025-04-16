@@ -1,3 +1,4 @@
-CHAR(10)
+INT
 CHAR(50)
 INT
+CHAR(30)
