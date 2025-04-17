@@ -23,11 +23,13 @@ inline std::string trim(const std::string& str) {
     return std::string(first, last);
 }
 
+
+
 // 定义 SQL 命令结构体
 struct SQLCommand {
     // 基本命令类型枚举
     enum CommandType {
-        INSERT, CREATE, DROP, UPDATE, DELETE, ALTER,
+        INSERT, CREATE, DROP, UPDATE, ALTER, DELETE_NEW,
         SELECT, // <-- 新增 SELECT 类型
         UNKNOWN
     } type = UNKNOWN; // 操作类型, 默认为未知
@@ -77,6 +79,8 @@ class SQLParser {
 public:
     // 解析 SQL 字符串并返回 SQLCommand 结构体
     SQLCommand parse(const std::string& sql);
+
+    // 执行 SQL 命令
 
 private:
     // (保持现有的私有辅助函数)

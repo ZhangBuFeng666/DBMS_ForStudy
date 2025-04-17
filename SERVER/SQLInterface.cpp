@@ -1,4 +1,6 @@
 #include "SQLInterface.h"
+
+
 #include <fstream>
 #include <iostream>
 #include <filesystem> // C++17 文件系统库，用于文件/目录操作
@@ -129,6 +131,104 @@ namespace {
 
 } // 结束匿名命名空间
 
+
+// --- 新增：检查用户登录 ---
+bool SQLInterface::check_login(const std::string& username, const std::string& password) {
+    const string dataPath = METADATA_USER_ROOT + "user_data.txt";
+    if (!fs::exists(dataPath)) {
+        cerr << "错误: 用户数据文件不存在: " << dataPath << endl;
+        return false; // 文件不存在无法登录
+    }
+
+    ifstream dataFile(dataPath);
+    string line;
+    if (dataFile.is_open()) {
+        while (getline(dataFile, line)) {
+            stringstream ss(line);
+            string fileUser, filePass, filePriv; // 读取文件中的信息
+            if (ss >> fileUser >> filePass) { // 至少要读到用户名和密码
+                if (fileUser == username && filePass == password) {
+                    dataFile.close();
+                    cout << "调试: 用户 '" << username << "' 登录验证成功。" << endl;
+                    return true; // 找到匹配的用户和密码
+                }
+            }
+        }
+        dataFile.close();
+    }
+    else {
+        cerr << "错误: 无法打开用户数据文件: " << dataPath << endl;
+        return false;
+    }
+
+    cerr << "调试: 用户 '" << username << "' 登录验证失败 (用户名或密码错误)。" << endl;
+    return false; // 遍历完文件未找到匹配项
+}
+
+// --- 新增：处理 SQL 命令的核心方法 ---
+// 返回值: true 表示命令被识别并尝试执行（可能执行失败），false 表示严重错误（如解析失败）
+// result_message: 用于返回执行结果信息（成功、失败原因、影响行数等）
+// select_result: 用于返回 SELECT 查询的结果
+bool SQLInterface::process_sql_command(const std::string& sql, const std::string& currentDbName, /* out */ std::string& result_message, /* out */ SelectResult& select_result) {
+    cout << "SQLInterface 正在处理 SQL: " << sql << endl;
+    if (sql.empty()) {
+        result_message = "错误: SQL 命令为空。";
+        return false;
+    }
+
+    SQLCommand cmd = internal_parser.parse(sql); // 使用内部解析器
+    cmd.dbName = currentDbName; // 设置数据库上下文
+
+    select_result = SelectResult(); // 重置 select 结果
+    bool success = false; // 操作是否成功
+
+    switch (cmd.type) {
+    case SQLCommand::CREATE:
+        if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) { result_message = "错误: 无效的 CREATE TABLE 语句。"; success = false; }
+        else { success = create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); result_message = success ? "表 '" + cmd.tableName + "' 创建成功。" : "错误: 创建表 '" + cmd.tableName + "' 失败。"; }
+        break;
+    case SQLCommand::DROP:
+        if (cmd.tableName.empty()) { result_message = "错误: 无效的 DROP TABLE 语句。"; success = false; }
+        else { success = drop_table(cmd.dbName, cmd.tableName); result_message = success ? "表 '" + cmd.tableName + "' 删除成功。" : "错误: 删除表 '" + cmd.tableName + "' 失败。"; }
+        break;
+    case SQLCommand::INSERT:
+        if (cmd.tableName.empty() || cmd.values.empty()) { result_message = "错误: 无效的 INSERT 语句。"; success = false; }
+        else { success = insert_into_table(cmd.dbName, cmd.tableName, cmd.values); result_message = success ? "数据插入成功。" : "错误: 插入数据失败。"; }
+        break;
+    case SQLCommand::UPDATE:
+        if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) { result_message = "错误: 无效的 UPDATE 语句。"; success = false; }
+        else { success = update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue); result_message = success ? "数据更新成功。" : "错误: 更新数据失败。"; /* TODO: 返回影响行数 */ }
+        break;
+    case SQLCommand::DELETE_NEW:
+        if (cmd.tableName.empty() || !cmd.hasWhere) { result_message = "错误: 无效的 DELETE 语句。"; success = false; }
+        else { success = delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue); result_message = success ? "数据删除成功。" : "错误: 删除数据失败。"; /* TODO: 返回影响行数 */ }
+        break;
+    case SQLCommand::ALTER:
+        if (cmd.tableName.empty() || cmd.alterAction == SQLCommand::INVALID_ALTER) { result_message = "错误: 无效的 ALTER TABLE 语句。"; success = false; }
+        else { success = alter_table(cmd); result_message = success ? "表修改成功。" : "错误: 修改表失败。"; }
+        break;
+    case SQLCommand::SELECT:
+        if (cmd.fromTable.empty() || cmd.selectColumns.empty()) { result_message = "错误: 无效的 SELECT 语句。"; success = false; }
+        else {
+            select_result = select_from_table(cmd); // 调用 select 方法获取结果
+            success = select_result.success; // select 方法内部会设置 success 标志
+            if (success) {
+                result_message = "查询成功，返回 " + std::to_string(select_result.data.size()) + " 行。";
+                // select_result 包含了数据，调用者需要处理
+            }
+            else {
+                result_message = select_result.errorMessage; // 使用 select 方法返回的错误信息
+            }
+        }
+        break;
+    case SQLCommand::UNKNOWN:
+    default:
+        result_message = "错误: 无法解析或不支持的 SQL 命令。";
+        success = false;
+        break;
+    }
+    return success; // 返回操作是否基本成功执行
+}
 
 // === SQLInterface 类的成员函数实现 ===
 

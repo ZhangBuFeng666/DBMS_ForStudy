@@ -3,6 +3,7 @@
 
 #include "Storage.h"     // 包含 FileManager 定义
 #include "SQLParser.h"   // 包含 SQLCommand 定义
+
 #include <string>
 #include <vector>
 #include <map>
@@ -49,12 +50,24 @@ public:
     // 返回: 包含查询结果或错误信息的 SelectResult 结构体
     SelectResult select_from_table(const SQLCommand& command);
 
+    // --- 新增：用户登录检查方法 ---
+    bool check_login(const std::string& username, const std::string& password);
+
+    // --- 新增：处理 SQL 命令的方法 (替代独立的 process_sql) ---
+    // 返回值可以更丰富，比如包含 SELECT 结果或错误信息
+    // 这里简化为返回 bool 表示基本成功/失败，结果通过引用传递或返回特定结构
+    bool process_sql_command(const std::string& sql, const std::string& currentDbName, /* out */ std::string& result_message, /* out */ SelectResult& select_result);
+
+
+
 private:
     // --- (私有辅助函数声明保持不变) ---
     bool validateFieldType(const std::string& typeStr);
     bool validateValueType(const std::string& type, const std::string& value);
     std::vector<std::string> parseFieldTypes(const std::string& dbName, const std::string& tableName);
     // (内部辅助函数如 findColumnIndex 等定义在 .cpp 的匿名空间)
+
+    SQLParser internal_parser; // SQLInterface 内部持有一个解析器实例
 };
 
 #endif // SQLINTERFACE_H

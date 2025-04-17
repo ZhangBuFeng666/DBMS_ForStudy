@@ -155,7 +155,7 @@ bool process_sql(const string& sql,
             else { cout << "尝试更新表 '" << cmd.tableName << "' 中 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; /* ... (打印 SET 子句) ... */ success = db.update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue); }
             break;
         }
-        case SQLCommand::DELETE: {
+        case SQLCommand::DELETE_NEW: {
             if (cmd.tableName.empty() || !cmd.hasWhere) { cerr << "错误: 无效的 DELETE 语句 (缺少表名或 WHERE 子句)。" << endl; success = false; } // 确保 hasWhere 为 true
             else { cout << "尝试从表 '" << cmd.tableName << "' 中删除 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; success = db.delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue); }
             break;

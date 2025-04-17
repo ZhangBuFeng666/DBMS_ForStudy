@@ -1,9 +1,11 @@
 #include "SQLParser.h"
+
 #include <iostream> // 用于调试输出
 #include <string>   // 确保包含 string
 #include <vector>   // 确保包含 vector
 
 using namespace std;
+
 
 // --- 分割逗号分隔的值 (增强版，处理引号) ---
 vector<string> SQLParser::split_values(const string& input) {
@@ -377,7 +379,7 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
     regex deleteRegex(R"(DELETE\s+FROM\s+(\w+)\s+(WHERE\s+.*);?)", regex::icase);
     //  表名(1)       WHERE子句(2)
     if (regex_match(sql, match, deleteRegex)) {
-        cmd.type = SQLCommand::DELETE;
+        cmd.type = SQLCommand::DELETE_NEW;
         cmd.tableName = match[1];
         if (!parse_where_clause(match[2].str(), cmd)) { // 解析 WHERE 部分
             cerr << "错误: 无法解析 DELETE 语句中的 WHERE 子句。" << endl;
