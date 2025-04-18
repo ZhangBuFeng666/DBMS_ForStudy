@@ -2,20 +2,32 @@
 
 #include "SocketManager.h"
 #include "ThreadPool.h"
+
+#include "SQLInterface.h" // <-- 包含 SQLInterface
+#include "SQLParser.h"   // <-- 包含 SQLCommand 和 SelectResult
 #include <nlohmann/json.hpp>
 #include<thread>
-
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <chrono>
+#include <unordered_map> // 用于 CommandType 映射
 
 class ClientSession {
 public:
-    // 构造函数（接管socket和线程）
-    ClientSession(mySocket::DBSocket&& sock, int id)
-        :sock(std::move(sock)),
+    // 构造函数（接管socket和线程,添加了一个）
+    ClientSession(mySocket::DBSocket&& sock, int id, SQLInterface& sql_interface_ref)
+        : sock(std::move(sock)),
         client_id(id),
+        sql_interface(sql_interface_ref), // <-- 初始化引用成员
         last_active(std::chrono::steady_clock::now()),
-        is_active(true){}
-
-
+        is_active(true),
+        is_logged_in(false), // <-- 新增：登录状态
+        current_database("default") // <-- 新增：当前数据库 (给个默认值)
+    {
+    }
+  
     //std::unique_ptr<ClientSession> create_ptr_ClientSession() {
     //    return std::make_unique<ClientSession>(*this);  // 使用std::move返回所有权
     //}
@@ -55,12 +67,20 @@ private:
 
     std::chrono::steady_clock::time_point last_active; // 最后活动时间
 
-    enum class CommandType {
+    // +++ 确保以下成员变量存在 +++
+    SQLInterface& sql_interface;        // <-- 引用 SQLInterface 实例
+    std::string current_database;       // <-- 当前使用的数据库名
+    bool is_logged_in;                  // <-- 标记用户是否已登录
+    // +++ 结束确保 +++
+
+
+    enum class RecvStatusType {
+        REGISTER,
         Login,
         Order,
         Unknown
 };
-    CommandType getCommandType(const std::string& type);
+    RecvStatusType getRecvStatusType(const std::string& type);
     //std::thread worker_thread_recv;   // 专属处理接收线程
     //std::thread worker_thread_send;   // 专属处理发送线程
 };

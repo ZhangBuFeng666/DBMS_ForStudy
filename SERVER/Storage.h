@@ -1,84 +1,68 @@
-#pragma once
-#include <fstream>
+ï»¿#pragma once
+#include <string>
+#include <vector>
+#include <map>
+#include <fstream> // ç”¨äºæ–‡ä»¶æµæ“ä½œ
 
-/*¼Ü¹¹£ºDATA|-METADATA   |-ÓÃ»§ÊôĞÔ±í£¨¶¨Òå£¬¼ÇÂ¼£©
-            |            |-Êı¾İ¿â±í£¨º¬Êı¾İ¿âÃû¡¢ÓµÓĞµÄ±íµÄÃû£©£¨¶¨Òå£¬¼ÇÂ¼£©
-            |            |-Êı¾İ¿âDB1ÎÄ¼ş¼Ğ     |-±íTABLE1ÔªÊı¾İ£¨¶¨Òå£¬Ô¼Êø£¬Ë÷Òı£©
-            |            |                     |-±íTABLE2ÔªÊı¾İ£¨¶¨Òå£¬Ô¼Êø£¬Ë÷Òı£©
-            |            |          .
-            |            |          .
-            |            |          .
-            |            |-Êı¾İ¿âDB2ÎÄ¼ş¼Ğ-±íTABLE9ÔªÊı¾İ£¨¶¨Òå£¬Ô¼Êø£¬Ë÷Òı£©
-            |            .
-            |            .
-            |            .
-            |
-            |-COMMONDATA |-Êı¾İ¿âDB1ÎÄ¼ş¼Ğ    |-±íTABLE1¼ÇÂ¼Êı¾İ
-                         |                    |-±íTABLE2¼ÇÂ¼Êı¾İ
-                         |                .
-                         |                .
-                         |                .
-                         |-Êı¾İ¿âDB2ÎÄ¼ş¼Ğ-±íTABLE9¼ÇÂ¼Êı¾İ
-                         .
-                         .
-                         .
+/*
+æ–‡ä»¶ç³»ç»Ÿæ¶æ„è¯´æ˜ (ä¸ SQLInterface ä¸­çš„ä¸€è‡´):
+DATA
+|- METADATA
+|Â  |- USERATTER/        -- ç”¨æˆ·å…ƒæ•°æ®ç›®å½•
+|Â  |Â  |- user_header.txt -- ç”¨æˆ·è¡¨å¤´å®šä¹‰æ–‡ä»¶
+|Â  |Â  |- user_data.txt   -- ç”¨æˆ·æ•°æ®è®°å½•æ–‡ä»¶
+|Â  |- DBATTER/          -- æ•°æ®åº“å…ƒæ•°æ®æ ¹ç›®å½•
+|Â  |Â  |- [ç”¨æˆ·å]/       -- æ¯ä¸ªç”¨æˆ·ä¸€ä¸ªæ•°æ®åº“ç›®å½• (ä½œä¸ºæ•°æ®åº“å)
+|Â  |Â  |Â  |- [æ•°æ®åº“å]/   -- æ•°æ®åº“ç›®å½• (è¿™é‡Œä½¿ç”¨ç”¨æˆ·åä½œä¸ºæ•°æ®åº“åï¼Œå®é™…åº”ç”¨å¯èƒ½ä¸åŒ)
+|Â  |Â  |Â  Â  |- [è¡¨å]/     -- æ–°å¢ï¼šæ¯ä¸ªè¡¨æœ‰ç‹¬ç«‹çš„å…ƒæ•°æ®ç›®å½•
+|Â  |Â  |Â  Â  Â  |- [è¡¨å].tdf -- å­—æ®µåæ–‡ä»¶ (æ¯è¡Œä¸€ä¸ªå­—æ®µå)
+|Â  |Â  |Â  Â  Â  |- [è¡¨å].tic -- å­—æ®µç±»å‹æ–‡ä»¶ (æ¯è¡Œä¸€ä¸ªå­—æ®µç±»å‹)
+|Â  |Â  |Â  Â  Â  |- [è¡¨å].tid -- çº¦æŸæ–‡ä»¶ (æ¯è¡Œä¸€ä¸ªçº¦æŸ)
+|
+|- COMMONDATA           -- é€šç”¨æ•°æ®æ ¹ç›®å½• (æ•°æ®æ–‡ä»¶æ”¾åœ¨è¿™é‡Œ)
+Â  Â  Â  Â  Â  Â  |- [è¡¨å].trd -- è¡¨æ•°æ®æ–‡ä»¶ (æ¯è¡Œä¸€æ¡è®°å½•)
 */
 
-#pragma pack(push, 1) // 1×Ö½Ú¶ÔÆë
-struct TableBlock {
-    char* name;
-    int32_t record_num;
-    int32_t field_num;
-    char* tdf_path;
-    char* trd_path;
-    std::string crtime;
-    std::string mtime;
-};
 
-struct FieldBlock {
-    int32_t order;
-    char name[128];
-    int32_t type;
-    int32_t param;
-    std::string mtime;
-    int32_t integrities; // Î»ÑÚÂë±íÊ¾Ô¼Êø
-};
-
-#pragma pack(pop)
-
+// æ–‡ä»¶ç®¡ç†å™¨ç±»ï¼Œè´Ÿè´£åº•å±‚çš„æ–‡ä»¶å’Œç›®å½•æ“ä½œ
 class FileManager {
 private:
-    const std::string METADATA_ROOT = "DATA/METADATA/";
+    // æ•°æ®åº“å…ƒæ•°æ®æ ¹è·¯å¾„
+    const std::string METADATA_ROOT = "DATA/METADATA/DBATTER/";
+    // é€šç”¨æ•°æ®æ ¹è·¯å¾„
     const std::string COMMON_ROOT = "DATA/COMMONDATA/";
+    // ç”¨æˆ·å…ƒæ•°æ®æ ¹è·¯å¾„ (ç”¨äºåˆ›å»ºç”¨æˆ·ç›¸å…³çš„ç›®å½•)
+    const std::string METADATA_USER_ROOT = "DATA/METADATA/USERATTER/"; // æ–°å¢æˆ–ç¡®è®¤
 
-    // Ğ´Èë¶ş½øÖÆÎÄ¼şµÄÄ£°åº¯Êı£¬pathÊÇÎÄ¼şÂ·¾¶+Ãû
+    // å†™å…¥äºŒè¿›åˆ¶æ–‡ä»¶çš„æ¨¡æ¿å‡½æ•° (å½“å‰æœªä½¿ç”¨ï¼Œä¿ç•™)
     template<typename T>
     int write_to_file(const std::string& path, const T& data) {
-        std::ofstream file(path, std::ios::binary|| std::ios::in | std::ios::out);
-        if (!file) return false;
+        std::ofstream file(path, std::ios::binary | std::ios::in | std::ios::out);
+        if (!file.is_open()) return 0; // å¤±è´¥
         file.write(reinterpret_cast<const char*>(&data), sizeof(T));
-        return file.good();
+        return file.good() ? 1 : 0; // æˆåŠŸè¿”å› 1ï¼Œå¤±è´¥è¿”å› 0
     }
 
-    //´´½¨¶ş½øÖÆÎÄ¼şµÄº¯Êı£¬pathÊÇÎÄ¼şÂ·¾¶+Ãû
-    //0:Ê§°Ü
-    //1:³É¹¦
-    //-1:ÎÄ¼şÒÑ´æÔÚ
+    // åˆ›å»ºï¼ˆç©ºçš„ï¼‰äºŒè¿›åˆ¶æ–‡ä»¶çš„å‡½æ•° (å½“å‰æœªä½¿ç”¨ï¼Œä¿ç•™)
+    // 0:å¤±è´¥, 1:æˆåŠŸ, -1:æ–‡ä»¶å·²å­˜åœ¨
     int write_to_file(const std::string& path);
 
 public:
-    // ´´½¨±í½á¹¹
-    bool create_table(const std::string& dbName, const std::string& tableName);
-    // É¾³ı±í½á¹¹
+    // æ„é€ å‡½æ•° (å¯ä»¥ç”¨æ¥è¿›è¡Œä¸€äº›åˆå§‹åŒ–æ£€æŸ¥)
+    FileManager();
+
+    // åˆ›å»ºæ–°è¡¨æ‰€éœ€çš„æ‰€æœ‰æ–‡ä»¶å’Œç›®å½•
+    bool create_table(const std::string& dbName,
+        const std::string& tableName,
+        const std::vector<std::pair<std::string, std::string>>& fieldsWithType,
+        const std::map<std::string, int>& constraints);
+
+    // åˆ é™¤æŒ‡å®šæ•°æ®åº“ä¸­çš„è¡¨çš„æ‰€æœ‰ç›¸å…³æ–‡ä»¶å’Œç›®å½•
     bool delete_table(const std::string& dbName, const std::string& tableName);
 
-    // ´´½¨ÎÄ¼ş¼Ğ
+    // åˆ›å»ºæ–‡ä»¶å¤¹ (åŒ…æ‹¬å…¶æ‰€æœ‰ä¸å­˜åœ¨çš„çˆ¶ç›®å½•)
     bool create_directory(const std::string& path);
-    // É¾³ıÎÄ¼ş
-    bool delete_file(const std::string& path);
-    //¸üĞÂÔªÊı¾İ
-    bool update_databaseCatalog(const std::string& dbName, const TableBlock& tb);
-    //É¾³ıÔªÊı¾İ
-    bool remove_from_catalog(const std::string& dbName,const std::string& tableName);
-};
 
+    // åˆ é™¤æ–‡ä»¶
+    bool delete_file(const std::string& path);
+};

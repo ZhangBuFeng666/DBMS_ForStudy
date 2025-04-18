@@ -36,9 +36,6 @@
     <Filter Include="头文件\Index">
       <UniqueIdentifier>{78d66edb-1b16-457c-aeb4-c8433569e23b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Log">
-      <UniqueIdentifier>{32a31fe6-ef5b-4a8d-b66f-017eae6ae34d}</UniqueIdentifier>
-    </Filter>
     <Filter Include="头文件\Network">
       <UniqueIdentifier>{5ba22bd9-c76a-4fdd-80a7-9b8e1a4f686a}</UniqueIdentifier>
     </Filter>
@@ -63,6 +60,9 @@
     </Filter>
     <Filter Include="源文件\sql">
       <UniqueIdentifier>{b6374ddb-6cff-4e72-a3fd-ccb3aac50ee6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Common\Log">
+      <UniqueIdentifier>{32a31fe6-ef5b-4a8d-b66f-017eae6ae34d}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -156,7 +156,7 @@
       <Filter>头文件\Index</Filter>
     </ClInclude>
     <ClInclude Include="Logs.h">
-      <Filter>头文件\Log</Filter>
+      <Filter>头文件\Common\Log</Filter>
     </ClInclude>
     <ClInclude Include="SocketManager.h">
       <Filter>头文件\Network</Filter>

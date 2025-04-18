@@ -1,283 +1,375 @@
-#include "Storage.h"
-#include"Tools.h"
+#include "Storage.h" // 通常你的 FileManager.h 文件可能命名为 Storage.h，这里保持一致
+// #include "Tools.h" // 如果 Tools.h 中有需要的功能，请包含
+#include <fstream>
+#include <vector>
+#include <map>
+#include <string>
+#include <regex>
+#include <filesystem> // C++17 文件系统库
+#include <iostream> // 用于调试输出
+
+// Windows 特定的头文件和库，用于文件/目录操作 (如果你只在 Windows 上运行)
+#ifdef _WIN32
 #include <Windows.h>
-#include <Shlwapi.h>
-#pragma comment(lib, "Shlwapi.lib")
+#include <Shlwapi.h> // PathCanonicalizeA 需要
+#include <AccCtrl.h> // 可能需要，如果处理权限
+#include <Aclapi.h>  // 可能需要，如果处理权限
+#pragma comment(lib, "Shlwapi.lib") // 链接 Shlwapi 库
+#endif
 
+// 确保命名空间被使用
 using namespace std;
-//使用ASCII编码
+namespace fs = std::filesystem; // 文件系统命名空间别名
 
+// === 构造函数 ===
+FileManager::FileManager() {
+    // 在构造时确保所有根目录存在 (更安全的做法是在应用启动时做一次)
+    // create_directory("DATA/"); // 如果 DATA/ 不存在，也需要创建
+    // create_directory(METADATA_ROOT);
+    // create_directory(COMMON_ROOT);
+    // create_directory(METADATA_USER_ROOT);
+}
+
+
+// === 私有函数实现 ===
+
+// 创建（空的）二进制文件 (当前未使用，保留)
 int FileManager::write_to_file(const std::string& path) {
     std::ifstream file0(path);
     if (file0.good()) {
-        return -1;
+        file0.close(); // 关闭文件
+        return -1; // 文件已存在
     }
-    std::ofstream file(path, std::ios::binary);
-    if (!file) return 0;
-    return file.good();
+    file0.close(); // 确保文件已关闭
+
+    std::ofstream file(path, std::ios::binary); // 以二进制模式创建
+    if (!file.is_open()) {
+        cerr << "错误: 无法创建文件: " << path << endl;
+        return 0; // 创建失败
+    }
+    file.close(); // 立即关闭，创建一个空文件
+    return 1; // 创建成功
 }
 
-bool FileManager::create_table(const std::string& dbName, const std::string& tableName) {
-    // 1. 创建表描述文件
+// === 公共函数实现 ===
+
+// 创建新表，包括定义文件(.tdf), 类型文件(.tic), 约束文件(.tid) 和数据文件(.trd)
+bool FileManager::create_table(const std::string& dbName,
+    const std::string& tableName,
+    const std::vector<std::pair<std::string, std::string>>& fieldsWithType,
+    const std::map<std::string, int>& constraints) {
+    // 构建元数据和数据文件的完整路径
     std::string dbMetaPath = METADATA_ROOT + dbName + "/";
-    create_directory(dbMetaPath);
+    std::string tableMetaPath = dbMetaPath + tableName + "/"; // 表的元数据存放在独立的子目录
+    std::string tableDataPath = COMMON_ROOT + tableName + ".trd"; // 数据文件直接放在 COMMON_ROOT 下
 
-    // 2. 创建数据文件
-    std::string dbDataPath = COMMON_ROOT + dbName + "/";
-    create_directory(dbDataPath);
+    cout << "调试: 创建表路径信息 -" << endl;
+    cout << "  元数据目录: " << tableMetaPath << endl;
+    cout << "  数据文件:   " << tableDataPath << endl;
 
-    TableBlock tb{
-        const_cast<char*>(tableName.c_str()),
-        0,
-        0,
-        const_cast<char*>(dbMetaPath.c_str()),
-        const_cast<char*>(dbDataPath.c_str()),
-        tools::Timer::getCurrentTime(),
-        tools::Timer::getCurrentTime(),
-    };
-
-    // 初始化空文件
-    std::ofstream(dbMetaPath + tableName + ".tdf").close();
-    std::ofstream(dbMetaPath + tableName + ".tic").close();
-    std::ofstream(dbMetaPath + tableName + ".tid").close();
-
-    std::ofstream(dbDataPath + tableName + ".trd").close();
-
-
-    // 3. 更新数据库元数据
-    return update_databaseCatalog(dbName, tb);
-}
-
-// 删除表结构
-bool FileManager::delete_table(const std::string& dbName, const std::string& tableName) {
-    std::string dbDataPath = COMMON_ROOT + dbName + "/";
-    std::string dbMetaPath = METADATA_ROOT + dbName + "/";
-
-    // 删除所有关联文件
-    delete_file(dbMetaPath + tableName + ".tdf");
-    delete_file(dbMetaPath + tableName + ".tic");
-    delete_file(dbMetaPath + tableName + ".tid");
-
-    delete_file(dbDataPath + tableName + ".trd");
-
-
-    // 更新数据库元数据
-    return remove_from_catalog(dbName, tableName);
-}
-bool FileManager::create_directory(const string& path) {
-    // 规范化路径处理
-    char normalizedPath[MAX_PATH];
-    PathCanonicalizeA(normalizedPath, path.c_str());
-
-    // 检查路径是否为空
-    if (normalizedPath[0] == '\0') {
-        throw runtime_error("Invalid directory path: " + path);
+    // 1. 创建数据库和表的元数据目录
+    if (!create_directory(tableMetaPath)) { // create_directory 会创建所有父目录
+        cerr << "错误: 创建表元数据目录失败: " << tableMetaPath << endl;
+        return false;
+    }
+    // 确保通用数据目录也存在 (虽然 create_directory 应该会创建，但显式检查一次更保险)
+    if (!create_directory(COMMON_ROOT)) {
+        cerr << "错误: 创建通用数据目录失败: " << COMMON_ROOT << endl;
+        return false;
     }
 
-    // 将路径转化为可操作的字符串
-    string pathStr = normalizedPath;
+    cout << "目录结构创建成功。" << endl;
 
-    // 使用迭代来逐级创建目录
-    size_t startPos = 0;
-    while (startPos < pathStr.length()) {
-        // 获取当前目录的路径
-        size_t endPos = pathStr.find('\\/', startPos);
-        if (endPos == string::npos) {
-            endPos = pathStr.length();
+    // 2. 检查表是否已存在 (通过检查主要的元数据文件，例如 .tdf)
+    std::string tdfFilePath = tableMetaPath + tableName + ".tdf";
+    if (fs::exists(tdfFilePath)) {
+        cerr << "错误: 表 '" << tableName << "' 在数据库 '" << dbName << "' 中已存在。" << endl;
+        return false;
+    }
+
+    // 3. 创建并打开元数据文件和数据文件
+    ofstream tdfFile(tdfFilePath);                     // 字段名文件
+    ofstream ticFile(tableMetaPath + tableName + ".tic"); // 字段类型文件
+    ofstream tidFile(tableMetaPath + tableName + ".tid"); // 约束文件
+    ofstream trdFile(tableDataPath);                   // 数据文件 (初始为空)
+
+    // 检查文件是否成功打开
+    if (!tdfFile.is_open()) { cerr << "错误: 无法打开 .tdf 文件: " << tdfFilePath << endl; return false; }
+    if (!ticFile.is_open()) { cerr << "错误: 无法打开 .tic 文件: " << tableMetaPath + tableName + ".tic" << endl; tdfFile.close(); return false; }
+    if (!tidFile.is_open()) { cerr << "错误: 无法打开 .tid 文件: " << tableMetaPath + tableName + ".tid" << endl; tdfFile.close(); ticFile.close(); return false; }
+    if (!trdFile.is_open()) { cerr << "错误: 无法打开 .trd 文件: " << tableDataPath << endl; tdfFile.close(); ticFile.close(); tidFile.close(); return false; }
+
+    cout << "元数据和数据文件已打开。" << endl;
+
+    // 4. 写入数据到元数据文件
+    try {
+        // 写入字段名到 .tdf (每行一个字段名)
+        cout << "调试: 写入 .tdf 文件..." << endl;
+        for (const auto& field : fieldsWithType) {
+            cout << "  写入字段名: " << field.first << endl;
+            tdfFile << field.first << '\n';
+            if (tdfFile.fail()) throw runtime_error(".tdf 文件写入失败");
         }
 
-        // 获取当前目录部分
-        string subPath = pathStr.substr(0, endPos);
-
-        // 尝试创建目录
-        if (!CreateDirectoryA(subPath.c_str(), nullptr)) {
-            DWORD error = GetLastError();
-            if (error != ERROR_ALREADY_EXISTS) {
-                // 如果目录不存在并且创建失败，抛出异常
-                if (error == ERROR_PATH_NOT_FOUND) {
-                    // 父目录不存在时，递归创建父目录
-                    if (startPos > 0) {
-                        string parentDir = pathStr.substr(0, pathStr.find_last_of('\\/', startPos));
-                        create_directory(parentDir); // 递归创建父目录
-                    }
-                }
-                throw runtime_error("Failed to create directory: " + subPath);
-            }
+        // 写入字段类型到 .tic (每行一个字段类型)
+        cout << "调试: 写入 .tic 文件..." << endl;
+        for (const auto& field : fieldsWithType) {
+            // 规范化类型字符串，去除内部空格
+            string fieldType = regex_replace(field.second, regex(R"(\s+)"), "");
+            cout << "  写入字段类型: " << fieldType << endl;
+            ticFile << fieldType << '\n';
+            if (ticFile.fail()) throw runtime_error(".tic 文件写入失败");
         }
 
-        // 更新 startPos 以继续处理下一个目录部分
-        startPos = endPos + 1;
+        // 写入约束到 .tid (例如 "primary_key 0")
+        cout << "调试: 写入 .tid 文件..." << endl;
+        for (const auto& [type, pos] : constraints) {
+            cout << "  写入约束: " << type << " " << pos << endl;
+            tidFile << type << " " << pos << '\n';
+            if (tidFile.fail()) throw runtime_error(".tid 文件写入失败");
+        }
+    }
+    catch (const exception& e) {
+        cerr << "错误: 写入表元数据时发生异常: " << e.what() << endl;
+        // 出现错误时，尝试关闭所有文件并清理已创建的文件 (复杂，这里只关闭)
+        tdfFile.close(); ticFile.close(); tidFile.close(); trdFile.close();
+        // 理想情况下，应该删除刚刚创建的文件，回滚操作
+        // delete_table(dbName, tableName); // 简单回滚尝试，但可能不完全
+        return false;
     }
 
+    // 5. 显式关闭所有文件 (流析构时也会自动关闭，但显式关闭更清晰)
+    tdfFile.close();
+    ticFile.close();
+    tidFile.close();
+    trdFile.close();
+
+    // 检查文件关闭后的状态 (可选)
+    if (!tdfFile.good() || !ticFile.good() || !tidFile.good() || !trdFile.good()) {
+        cerr << "警告: 部分元数据或数据文件写入后状态异常。" << endl;
+        // 即使警告也可能算成功，取决于需求
+    }
+
+
+    cout << "表 '" << tableName << "' 创建成功。" << endl;
     return true;
 }
 
-#include <AccCtrl.h>
-#include <Aclapi.h>
 
+// 删除指定数据库中的表结构及其数据
+bool FileManager::delete_table(const std::string& dbName, const std::string& tableName) {
+    std::string dbMetaPath = METADATA_ROOT + dbName + "/";
+    std::string tableMetaPath = dbMetaPath + tableName + "/"; // 表的元数据目录
+    std::string tableDataPath = COMMON_ROOT + tableName + ".trd"; // 数据文件路径
+
+    cout << "调试: 准备删除表 '" << tableName << "'" << endl;
+    cout << "  元数据目录: " << tableMetaPath << endl;
+    cout << "  数据文件:   " << tableDataPath << endl;
+
+    bool success = true; // 跟踪是否所有删除都成功 (或至少不因文件不存在而失败)
+
+    // 1. 删除所有关联的元数据文件
+    if (!delete_file(tableMetaPath + tableName + ".tdf")) {
+        cerr << "警告: 删除 .tdf 文件失败或文件不存在。" << endl;
+        // 根据需要决定这里是否返回 false 或只警告
+        // success = false;
+    }
+    else { cout << "调试: .tdf 已删除。" << endl; }
+
+    if (!delete_file(tableMetaPath + tableName + ".tic")) {
+        cerr << "警告: 删除 .tic 文件失败或文件不存在。" << endl;
+        // success = false;
+    }
+    else { cout << "调试: .tic 已删除。" << endl; }
+
+    if (!delete_file(tableMetaPath + tableName + ".tid")) {
+        cerr << "警告: 删除 .tid 文件失败或文件不存在。" << endl;
+        // success = false;
+    }
+    else { cout << "调试: .tid 已删除。" << endl; }
+
+
+    // 2. 删除数据文件
+    if (!delete_file(tableDataPath)) {
+        cerr << "警告: 删除 .trd 文件失败或文件不存在。" << endl;
+        // success = false;
+    }
+    else { cout << "调试: .trd 已删除。" << endl; }
+
+
+    // 3. 删除表的元数据目录 (如果存在且为空)
+    error_code ec_rmdir;
+    fs::remove(tableMetaPath, ec_rmdir); // 使用 C++17 filesystem 删除目录
+    if (ec_rmdir) {
+        // 如果目录不存在或者不为空，这里会报错。只在目录不存在或为空且删除失败时视为警告。
+        if (ec_rmdir != errc::no_such_file_or_directory && ec_rmdir != errc::directory_not_empty) {
+            cerr << "警告: 删除表元数据目录失败: " << ec_rmdir.message() << endl;
+            // success = false;
+        }
+        else {
+            cout << "调试: 表元数据目录已删除或不存在/不为空。" << endl;
+        }
+    }
+    else {
+        cout << "调试: 表元数据目录已删除。" << endl;
+    }
+
+
+    // 4. TODO: 更新数据库级别的元数据 (例如表列表)，如果你的系统有这种全局管理
+
+    if (success) {
+        cout << "表 '" << tableName << "' 已成功删除。" << endl;
+    }
+    else {
+        cerr << "错误: 删除表 '" << tableName << "' 时发生部分错误。" << endl;
+    }
+    return success; // 如果任何一个文件删除失败 (且不是因为不存在)，可能返回 false
+}
+
+
+// 创建文件夹，如果父目录不存在则一并创建 (使用 Windows API 实现)
+bool FileManager::create_directory(const string& path) {
+#ifdef _WIN32
+    char normalizedPath[MAX_PATH];
+    // 规范化路径，处理相对路径、斜杠等
+    if (!PathCanonicalizeA(normalizedPath, path.c_str())) {
+        cerr << "错误: 规范化目录路径失败: " << path << endl;
+        // 无法规范化路径，视为失败
+        // throw runtime_error("Invalid directory path: " + path); // 可以抛出异常
+        return false;
+    }
+
+    string pathStr = normalizedPath;
+    // 确保路径以斜杠或反斜杠结尾，便于处理子路径
+    if (pathStr.back() != '\\' && pathStr.back() != '/') {
+        pathStr += '\\';
+    }
+
+    size_t startPos = 0;
+    // 找到第一个路径分隔符 (跳过可能的盘符，如 C:\)
+    size_t driveColon = pathStr.find(':');
+    if (driveColon != string::npos && driveColon + 1 < pathStr.length() && (pathStr[driveColon + 1] == '\\' || pathStr[driveColon + 1] == '/')) {
+        startPos = driveColon + 2; // 从盘符后的路径开始
+    }
+    else if (pathStr.rfind("\\\\", 0) == 0 || pathStr.rfind("//", 0) == 0) { // 处理 UNC 路径 \\server\share
+        // 查找第三个斜杠作为起点
+        size_t firstSlash = pathStr.find_first_of("\\/", 2);
+        if (firstSlash != string::npos) {
+            size_t secondSlash = pathStr.find_first_of("\\/", firstSlash + 1);
+            if (secondSlash != string::npos) {
+                startPos = secondSlash + 1;
+            }
+        }
+        if (startPos == 0) startPos = pathStr.find_first_not_of("\\/", 0); // 如果是 \\share 之类的简单 UNC
+        if (startPos == string::npos) startPos = 0; // 如果只有 \\ 或 //
+    }
+    else {
+        startPos = pathStr.find_first_not_of("\\/", 0); // 非 UNC，非盘符开头
+        if (startPos == string::npos) startPos = 0;
+    }
+
+
+    while (startPos < pathStr.length()) {
+        // 查找下一个路径分隔符
+        size_t endPos = pathStr.find_first_of("\\/", startPos);
+        if (endPos == string::npos) {
+            endPos = pathStr.length(); // 最后一个组件
+        }
+
+        string subPath = pathStr.substr(0, endPos); // 当前要创建的子路径
+
+        // 跳过根目录或盘符本身 (如 "C:" 或 "/")
+        if (subPath.empty() || subPath == "\\" || subPath == "/" || (subPath.length() == 2 && subPath[1] == ':')) {
+            startPos = endPos + 1;
+            continue;
+        }
+        // 跳过 UNC 路径的前两部分 (如 "\\server" 或 "//server")
+        if (pathStr.rfind("\\\\", 0) == 0 || pathStr.rfind("//", 0) == 0) {
+            size_t firstSlash = pathStr.find_first_of("\\/", 2);
+            if (firstSlash != string::npos && endPos <= firstSlash) {
+                startPos = endPos + 1; continue;
+            }
+            size_t secondSlash = pathStr.find_first_of("\\/", (firstSlash != string::npos ? firstSlash + 1 : 2));
+            if (secondSlash != string::npos && endPos <= secondSlash) {
+                startPos = endPos + 1; continue;
+            }
+        }
+
+
+        // 尝试创建当前子目录
+        if (!CreateDirectoryA(subPath.c_str(), nullptr)) {
+            DWORD error = GetLastError();
+            // 如果目录已存在，这是正常情况，继续
+            if (error != ERROR_ALREADY_EXISTS && error != ERROR_SUCCESS) {
+                cerr << "错误: 创建目录失败: " << subPath << ", 错误码: " << error << endl;
+                // throw runtime_error("Failed to create directory: " + subPath + ", error code: " + to_string(error)); // 可以抛出异常
+                return false; // 创建失败
+            }
+        }
+        else {
+            // cout << "调试: 目录创建成功: " << subPath << endl; // 调试信息
+        }
+
+        startPos = endPos + 1; // 移动到下一个路径分隔符之后
+    }
+    return true; // 所有组件都已创建或已存在
+#else
+    // 非 Windows 环境，使用 C++17 filesystem
+    error_code ec;
+    fs::create_directories(path, ec);
+    if (ec) {
+        cerr << "错误: 创建目录失败 (std::filesystem): " << path << ", 错误: " << ec.message() << endl;
+        return false;
+    }
+    return true;
+#endif
+}
+
+
+// 删除文件 (使用 Windows API 实现，尝试解除只读属性)
 bool FileManager::delete_file(const string& path) {
+#ifdef _WIN32
     // 获取文件属性
     DWORD attrs = GetFileAttributesA(path.c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) {
-        return (GetLastError() == ERROR_FILE_NOT_FOUND); // 文件不存在返回true
+        DWORD error = GetLastError();
+        // 如果文件不存在，则认为删除（即“不存在”）是成功的
+        return (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND);
     }
 
-    // 解除只读属性
+    // 如果文件是只读属性，尝试解除
     if (attrs & FILE_ATTRIBUTE_READONLY) {
-        SetFileAttributesA(path.c_str(), attrs & ~FILE_ATTRIBUTE_READONLY);
+        if (!SetFileAttributesA(path.c_str(), attrs & ~FILE_ATTRIBUTE_READONLY)) {
+            cerr << "警告: 无法移除文件只读属性: " << path << ", 错误码: " << GetLastError() << endl;
+            // 即使无法移除只读，仍尝试删除，可能成功
+        }
     }
-
-    // 设置完全控制权限
-    PACL oldDacl = nullptr;
-    PSECURITY_DESCRIPTOR sd = nullptr;
-    GetNamedSecurityInfoA(path.c_str(), SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION, nullptr, nullptr,
-        &oldDacl, nullptr, &sd);
-
-    EXPLICIT_ACCESS_A ea = { 0 }; // 使用 A 版本的 EXPLICIT_ACCESS
-    ea.grfAccessPermissions = GENERIC_ALL;
-    ea.grfAccessMode = SET_ACCESS;
-    ea.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
-    ea.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
-    ea.Trustee.ptstrName = const_cast<char*>("CURRENT_USER"); // 使用 ANSI 字符串
-
-    PACL newDacl = nullptr;
-    SetEntriesInAclA(1, &ea, oldDacl, &newDacl);
-    SetNamedSecurityInfoA(const_cast<char*>(path.c_str()), SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION, nullptr, nullptr,
-        newDacl, nullptr);
 
     // 执行删除操作
     BOOL success = DeleteFileA(path.c_str());
-    LocalFree(newDacl);
-    LocalFree(sd);
+    if (!success) {
+        DWORD error = GetLastError();
+        // 如果删除失败，且不是因为文件不存在，则视为错误
+        if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) {
+            cerr << "错误: 删除文件失败: " << path << ", 错误码: " << error << endl;
+            return false; // 删除失败
+        }
+        // 如果文件在检查属性后消失了 (可能被其他进程删除)，也算成功
+        return true;
+    }
 
-    return success;
-}
-
-#include <WinBase.h>
-#include <fileapi.h>
-#include <algorithm>
-#include <vector>
-
-bool FileManager::update_databaseCatalog(const string& dbName, const TableBlock& tb) {
-    const string catalogPath = METADATA_ROOT + dbName + ".db";
-
-    // 创建文件内存映射
-    HANDLE hFile = CreateFileA(catalogPath.c_str(), GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (hFile == INVALID_HANDLE_VALUE) {
+    return true; // 删除成功
+#else
+    // 非 Windows 环境，使用 C++17 filesystem
+    error_code ec;
+    // remove 函数会删除文件或空目录
+    fs::remove(path, ec);
+    if (ec) {
+        // 如果文件不存在，则认为成功
+        if (ec == errc::no_such_file_or_directory) return true;
+        cerr << "错误: 删除文件失败 (std::filesystem): " << path << ", 错误: " << ec.message() << endl;
         return false;
     }
-
-    // 文件锁定（防止并发修改）
-    OVERLAPPED offset = { 0 };
-    LockFileEx(hFile, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &offset);
-
-    // 内存映射处理
-    HANDLE hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
-    LPVOID pData = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-
-    // 解析元数据结构
-    DWORD fileSize = GetFileSize(hFile, nullptr);
-    const int BLOCK_SIZE = sizeof(TableBlock);
-    vector<TableBlock> blocks(fileSize / BLOCK_SIZE);
-    memcpy(blocks.data(), pData, fileSize);
-
-    // 查找目标表记录并更新
-    auto it = find_if(blocks.begin(), blocks.end(),
-        [&](const TableBlock& tbItem) {
-            return strncmp(tbItem.name, tb.name, sizeof(TableBlock::name)) == 0;
-        });
-
-    // 如果找到了要更新的表，进行更新
-    if (it != blocks.end()) {
-        *it = tb;  // 更新记录
-
-        // 写入临时文件
-        const string tempPath = catalogPath + ".tmp";
-        HANDLE hTemp = CreateFileA(tempPath.c_str(), GENERIC_WRITE, 0, nullptr,
-            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        DWORD written = 0;
-        WriteFile(hTemp, blocks.data(), blocks.size() * BLOCK_SIZE, &written, nullptr);
-        CloseHandle(hTemp);
-
-        // 文件替换操作
-        ReplaceFileA(catalogPath.c_str(), tempPath.c_str(), nullptr,
-            REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr);
-    }
-
-    // 清理资源
-    UnmapViewOfFile(pData);
-    CloseHandle(hMap);
-    UnlockFileEx(hFile, 0, MAXDWORD, MAXDWORD, &offset);
-    CloseHandle(hFile);
-
-    // 如果成功找到并更新表，返回 true
-    return it != blocks.end();
-}
-
-bool FileManager::remove_from_catalog(const string& dbName, const string& tableName) {
-    const string catalogPath = METADATA_ROOT + dbName + ".db";
-
-    // 创建文件内存映射
-    HANDLE hFile = CreateFileA(catalogPath.c_str(), GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (hFile == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-
-    // 文件锁定（防止并发修改）
-    OVERLAPPED offset = { 0 };
-    LockFileEx(hFile, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &offset);
-
-    // 内存映射处理
-    HANDLE hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
-    LPVOID pData = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-
-    // 解析元数据结构
-    DWORD fileSize = GetFileSize(hFile, nullptr);
-    const int BLOCK_SIZE = sizeof(TableBlock);
-    vector<TableBlock> blocks(fileSize / BLOCK_SIZE);
-    memcpy(blocks.data(), pData, fileSize);
-
-    // 查找目标表记录
-    auto it = find_if(blocks.begin(), blocks.end(),
-        [&](const TableBlock& tb) {
-            return strncmp(tb.name, tableName.c_str(),
-                sizeof(TableBlock::name)) == 0;
-        });
-
-    // 原子化更新操作
-    if (it != blocks.end()) {
-        // 创建临时副本
-        vector<TableBlock> newBlocks;
-        newBlocks.reserve(blocks.size() - 1);
-        copy_if(blocks.begin(), blocks.end(),
-            back_inserter(newBlocks),
-            [&](const TableBlock& tb) { return &tb != &*it; });
-
-        // 写入临时文件
-        const string tempPath = catalogPath + ".tmp";
-        HANDLE hTemp = CreateFileA(tempPath.c_str(), GENERIC_WRITE, 0, nullptr,
-            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        DWORD written = 0;
-        WriteFile(hTemp, newBlocks.data(),
-            newBlocks.size() * BLOCK_SIZE, &written, nullptr);
-        CloseHandle(hTemp);
-
-        // 文件替换操作
-        ReplaceFileA(catalogPath.c_str(), tempPath.c_str(), nullptr,
-            REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr);
-    }
-
-    // 清理资源
-    UnmapViewOfFile(pData);
-    CloseHandle(hMap);
-    UnlockFileEx(hFile, 0, MAXDWORD, MAXDWORD, &offset);
-    CloseHandle(hFile);
-
-    return it != blocks.end();
+    return true; // 删除成功
+#endif
 }
