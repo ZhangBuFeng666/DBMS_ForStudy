@@ -1,19 +1,5 @@
 #include "SQLInterface.h"
 
-
-#include <fstream>
-#include <iostream>
-#include <filesystem> // C++17 文件系统库，用于文件/目录操作
-#include <vector>
-#include <string>
-#include <sstream>
-#include <regex>
-#include <stdexcept> // 用于抛出异常
-#include <algorithm> // 用于 std::remove, std::transform
-#include <set>       // 用于 std::set (实现 distinct 的另一种方式，这里没用)
-#include <map>       // 用于列名到索引的映射
-
-
 // 确保命名空间被使用
 using namespace std;
 namespace fs = std::filesystem; // 文件系统命名空间别名

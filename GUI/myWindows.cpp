@@ -4,7 +4,7 @@ LoginWindow::LoginWindow(InternetConnector *connector,QWidget *parent) : QWidget
 
     this->connector = connector;
 
-    setWindowTitle("登陆/注册");
+    setWindowTitle("登录");
     setFixedSize(500, 250);
 
     // 加载背景图片
@@ -13,7 +13,7 @@ LoginWindow::LoginWindow(InternetConnector *connector,QWidget *parent) : QWidget
     // palette.setBrush(QPalette::Window, background);
     // this->setPalette(palette);
 
-    QLabel* tip=new QLabel("(ID未注册将自动注册)",this);
+    QLabel* tip=new QLabel("",this);
     tip->setGeometry(180,50,150,20);
     usernameLabel = new QLabel("ID:", this);
     usernameLabel->setGeometry(20,50,30,20);
@@ -24,7 +24,7 @@ LoginWindow::LoginWindow(InternetConnector *connector,QWidget *parent) : QWidget
     passwordEdit = new QLineEdit(this);
     passwordEdit->setGeometry(50,100,130,20);
     passwordEdit->setEchoMode(QLineEdit::Password);
-    loginButton = new QPushButton("登陆/注册", this);
+    loginButton = new QPushButton("登录", this);
     loginButton->setGeometry(60,150,100,30);
 
     connect(loginButton, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);

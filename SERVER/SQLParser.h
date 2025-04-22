@@ -29,8 +29,9 @@ inline std::string trim(const std::string& str) {
 struct SQLCommand {
     // 基本命令类型枚举
     enum CommandType {
-        INSERT, CREATE, DROP, UPDATE, ALTER, DELETE_NEW,
-        SELECT, // <-- 新增 SELECT 类型
+        CREATE, ALTER, DROP,
+        INSERT, UPDATE, DELETE_NEW,
+        SELECT,
         UNKNOWN
     } type = UNKNOWN; // 操作类型, 默认为未知
 

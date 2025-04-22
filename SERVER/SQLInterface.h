@@ -4,10 +4,11 @@
 #include "Storage.h"     // 包含 FileManager 定义
 #include "SQLParser.h"   // 包含 SQLCommand 定义
 
-#include <string>
-#include <vector>
-#include <map>
-
+#include <fstream>
+#include <iostream>
+#include <filesystem> // C++17 文件系统库，用于文件/目录操作
+#include <stdexcept> // 用于抛出异常
+#include <set>       // 用于 std::set (实现 distinct 的另一种方式，这里没用)
 // --- 定义 SELECT 查询结果的结构体 ---
 struct SelectResult {
     bool success = false;                           // 操作是否成功执行

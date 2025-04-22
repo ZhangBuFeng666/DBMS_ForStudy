@@ -1,4 +1,3 @@
-#include "SQLParser.h"
 #include "SQLInterface.h" // °üº¬ SelectResult ¶¨Òå
 
 #include <iostream>

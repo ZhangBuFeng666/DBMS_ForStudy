@@ -34,11 +34,10 @@ InternetConnector::~InternetConnector() {
 }
 
 bool InternetConnector::login(const QString &id, const QString &password) {
-    QJsonObject loginRequest;
-    loginRequest["Type"] = "Login";
-    loginRequest["ID"] = id;
-    loginRequest["Password"] = password;
-
+    QJsonObject loginRequest={
+        {"Type", "Login"},
+        {"Mass",QJsonObject{{"ID",id},{"Password",password}}}
+    };
     sendMassage(loginRequest);
     QJsonObject response = receiveMassage();
 
@@ -67,7 +66,7 @@ void InternetConnector::sendOrder(const QString &qstr) {
     printf("在此时发送命令\n");
     QJsonObject mas;
     mas["Type"] = "Order";
-    mas["Mas"] = qstr;
+    mas["Mass"] = qstr;
     if(sendMassage(mas)){
         printf("Send success!!\n");
     }
@@ -87,7 +86,7 @@ QJsonObject InternetConnector::receiveMassage(int special) {
     QByteArray data;
     switch(special){
     case 0:
-        socket->waitForReadyRead(3000);
+        socket->waitForReadyRead(30000);
         data = socket->readAll();
         break;
     case 1:
@@ -109,3 +108,22 @@ QJsonObject InternetConnector::receiveMassage(int special) {
 
     return QJsonObject();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
