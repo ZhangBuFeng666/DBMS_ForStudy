@@ -198,70 +198,67 @@ bool process_sql(const string& sql,
 }
 
 // --- (main 函数保持不变，但可以加入更多 SELECT 测试) ---
-int main() {
-    SQLInterface db;
-    SQLParser parser;
-    string currentDbName = "myTestDB"; // 使用之前的数据库名
+void test() {
+    //SQLInterface db;
+    //SQLParser parser;
+    //string currentDbName = "myTestDB"; // 使用之前的数据库名
 
-    cout << "--- 微型数据库管理系统初始化 ---" << endl;
-    FileManager& fm = db.getFileManager(); // 获取文件管理器
-    // (确保目录存在...)
-    fm.create_directory("DATA/METADATA/USERATTER/");
-    fm.create_directory("DATA/METADATA/DBATTER/");
-    fm.create_directory("DATA/COMMONDATA/");
-    db.create_database(currentDbName); // 确保数据库目录存在
-    cout << "当前数据库设置为: " << currentDbName << endl;
+    //cout << "--- 微型数据库管理系统初始化 ---" << endl;
+    //FileManager& fm = db.getFileManager(); // 获取文件管理器
+    //// (确保目录存在...)
+    //db.create_database(currentDbName); // 确保数据库目录存在
+    //cout << "当前数据库设置为: " << currentDbName << endl;
 
-    // === 测试用例 ===
-    // --- (Setup: DROP, CREATE, INSERT as before) ---
-    process_sql("DROP TABLE students;", db, parser, currentDbName);
-    process_sql("DROP TABLE courses;", db, parser, currentDbName);
-    process_sql("CREATE TABLE students (sid INT PRIMARY KEY, sname CHAR(50), age INT, major CHAR(30));", db, parser, currentDbName);
-    process_sql("INSERT INTO students VALUES (101, '爱丽丝', 21, '计算机');", db, parser, currentDbName);
-    process_sql("INSERT INTO students VALUES (103, '查理', 21, '艺术');", db, parser, currentDbName); // 年龄 21
-    process_sql("INSERT INTO students VALUES (102, '鲍勃', 23, '土木');", db, parser, currentDbName);
-    process_sql("INSERT INTO students VALUES (104, '戴安娜', 19, '国关');", db, parser, currentDbName);
-    process_sql("INSERT INTO students VALUES (105, '爱丽丝', 22, '数学');", db, parser, currentDbName); // 另一个爱丽丝
+    //// === 测试用例 ===
+    //// --- (Setup: DROP, CREATE, INSERT as before) ---
+    //process_sql("DROP TABLE students;", db, parser, currentDbName);
+    //process_sql("DROP TABLE courses;", db, parser, currentDbName);
+    //process_sql("CREATE TABLE students (sid INT PRIMARY KEY, sname CHAR(50), age INT, major CHAR(30));", db, parser, currentDbName);
+    //process_sql("INSERT INTO students VALUES (101, '爱丽丝', 21, '计算机');", db, parser, currentDbName);
+    //process_sql("INSERT INTO students VALUES (103, '查理', 21, '艺术');", db, parser, currentDbName); // 年龄 21
+    //process_sql("INSERT INTO students VALUES (102, '鲍勃', 23, '土木');", db, parser, currentDbName);
+    //process_sql("INSERT INTO students VALUES (104, '戴安娜', 19, '国关');", db, parser, currentDbName);
+    //process_sql("INSERT INTO students VALUES (105, '爱丽丝', 22, '数学');", db, parser, currentDbName); // 另一个爱丽丝
 
-    // --- 测试 SELECT ---
-    cout << "\n--- 测试 SELECT ---" << endl;
-    process_sql("SELECT * FROM students;", db, parser, currentDbName);
-    process_sql("SELECT sid, sname FROM students;", db, parser, currentDbName);
-    process_sql("SELECT major, age, sid FROM students WHERE age = 21;", db, parser, currentDbName);
-    process_sql("SELECT * FROM students WHERE sname = '鲍勃';", db, parser, currentDbName);
-    process_sql("SELECT sname, major FROM students WHERE sid = 999;", db, parser, currentDbName); // 应返回空集
-    process_sql("SELECT sname, major FROM students WHERE sname IN ('爱丽丝', '戴安娜');", db, parser, currentDbName);
-    process_sql("SELECT sid FROM students WHERE sid IN (101, 103, 105, 109);", db, parser, currentDbName); // 包含不存在的 ID
-    process_sql("SELECT sid FROM students WHERE sname IN ('不存在');", db, parser, currentDbName); // IN 值不存在
+    //// --- 测试 SELECT ---
+    //cout << "\n--- 测试 SELECT ---" << endl;
+    //process_sql("SELECT * FROM students;", db, parser, currentDbName);
+    //process_sql("SELECT sid, sname FROM students;", db, parser, currentDbName);
+    //process_sql("SELECT major, age, sid FROM students WHERE age = 21;", db, parser, currentDbName);
+    //process_sql("SELECT * FROM students WHERE sname = '鲍勃';", db, parser, currentDbName);
+    //process_sql("SELECT sname, major FROM students WHERE sid = 999;", db, parser, currentDbName); // 应返回空集
+    //process_sql("SELECT sname, major FROM students WHERE sname IN ('爱丽丝', '戴安娜');", db, parser, currentDbName);
+    //process_sql("SELECT sid FROM students WHERE sid IN (101, 103, 105, 109);", db, parser, currentDbName); // 包含不存在的 ID
+    //process_sql("SELECT sid FROM students WHERE sname IN ('不存在');", db, parser, currentDbName); // IN 值不存在
 
-    // 测试 ORDER BY (仅 INT)
-    process_sql("SELECT sid, sname, age FROM students ORDER BY age;", db, parser, currentDbName); // 默认 ASC
-    process_sql("SELECT sid, sname, age FROM students ORDER BY age DESC;", db, parser, currentDbName);
-    process_sql("SELECT * FROM students ORDER BY sid DESC;", db, parser, currentDbName);
-    process_sql("SELECT * FROM students ORDER BY sname;", db, parser, currentDbName); // 尝试按非 INT 排序 (应失败或忽略)
+    //// 测试 ORDER BY (仅 INT)
+    //process_sql("SELECT sid, sname, age FROM students ORDER BY age;", db, parser, currentDbName); // 默认 ASC
+    //process_sql("SELECT sid, sname, age FROM students ORDER BY age DESC;", db, parser, currentDbName);
+    //process_sql("SELECT * FROM students ORDER BY sid DESC;", db, parser, currentDbName);
+    //process_sql("SELECT * FROM students ORDER BY sname;", db, parser, currentDbName); // 尝试按非 INT 排序 (应失败或忽略)
 
-    // 测试 DISTINCT
-    process_sql("SELECT DISTINCT major FROM students;", db, parser, currentDbName);
-    process_sql("SELECT DISTINCT age FROM students ORDER BY age;", db, parser, currentDbName); // DISTINCT + ORDER BY
-    process_sql("SELECT DISTINCT sname, age FROM students;", db, parser, currentDbName); // 多列 DISTINCT
+    //// 测试 DISTINCT
+    //process_sql("SELECT DISTINCT major FROM students;", db, parser, currentDbName);
+    //process_sql("SELECT DISTINCT age FROM students ORDER BY age;", db, parser, currentDbName); // DISTINCT + ORDER BY
+    //process_sql("SELECT DISTINCT sname, age FROM students;", db, parser, currentDbName); // 多列 DISTINCT
 
-    // 测试不存在的表或列
-    process_sql("SELECT * FROM non_existent_table;", db, parser, currentDbName);
-    process_sql("SELECT non_existent_column FROM students;", db, parser, currentDbName);
-    process_sql("SELECT sid FROM students WHERE non_existent_column = 1;", db, parser, currentDbName);
-    process_sql("SELECT sid FROM students ORDER BY non_existent_column;", db, parser, currentDbName);
+    //// 测试不存在的表或列
+    //process_sql("SELECT * FROM non_existent_table;", db, parser, currentDbName);
+    //process_sql("SELECT non_existent_column FROM students;", db, parser, currentDbName);
+    //process_sql("SELECT sid FROM students WHERE non_existent_column = 1;", db, parser, currentDbName);
+    //process_sql("SELECT sid FROM students ORDER BY non_existent_column;", db, parser, currentDbName);
 
-    // --- (交互式输入循环) ---
-    cout << "\n--- 进入交互模式 (输入空行或 EOF 退出) ---" << endl;
-    string line;
-    cout << currentDbName << "> ";
-    while (getline(cin, line) && !line.empty()) {
-        process_sql(line, db, parser, currentDbName);
-        cout << currentDbName << "> ";
-    }
+    //// --- (交互式输入循环) ---
+    //cout << "\n--- 进入交互模式 (输入空行或 EOF 退出) ---" << endl;
+    //string line;
+    //cout << currentDbName << "> ";
+    //while (getline(cin, line) && !line.empty()) {
+    //    process_sql(line, db, parser, currentDbName);
+    //    cout << currentDbName << "> ";
+    //}
 
-    cout << "\n--- 微型数据库管理系统关闭 ---" << endl;
-    return 0;
+    //cout << "\n--- 微型数据库管理系统关闭 ---" << endl;
+    //return 0;
 }
 
 // 注意: FileManager.h 和 FileManager.cpp 保持不变，无需重新生成。
