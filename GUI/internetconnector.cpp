@@ -32,7 +32,7 @@ InternetConnector::~InternetConnector() {
         delete socket;
     }
 }
-
+#include<iostream>
 bool InternetConnector::login(const QString &id, const QString &password) {
     QJsonObject loginRequest={
         {"Type", "Login"},
@@ -42,6 +42,7 @@ bool InternetConnector::login(const QString &id, const QString &password) {
     QJsonObject response = receiveMassage();
 
     if (response["Status"].toString() == "Success") {
+        std::cout<<response["Message"].toString().toStdString();
         qDebug() << "登录成功";
         return true;
     } else {
