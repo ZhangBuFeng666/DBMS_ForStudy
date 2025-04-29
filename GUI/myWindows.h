@@ -5,6 +5,8 @@
 #include <QMenuBar>
 #include <QStatusBar>
 #include <QTabWidget>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QSplitter>
 #include <QActionGroup>
 #include <QApplication>

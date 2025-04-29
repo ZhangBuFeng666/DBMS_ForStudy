@@ -39,7 +39,7 @@ void MyMainWindow::createLayout() {
     // 主分割器
     QSplitter *mainSplitter = new QSplitter(Qt::Vertical);
 
-    // 结果展示区域（标签页）
+    // 结果展示区域（标签页(含输入语句展示+状态展示+结果（比如表）展示)）
     resultTabs = new QTabWidget();
     resultTabs->setTabsClosable(true);
     resultTabs->setMovable(true);
@@ -139,28 +139,7 @@ void MyMainWindow::executeScriptOrder() {
         oriCommand.chop(1);
         QStringList commands = oriCommand.split(';');
         for(QString& command:commands){
-            // 发送命令
-            connector->sendOrder(command);
-            QJsonObject response = connector->receiveMassage();  // 接收响应
-
-            // 获取命令的第一个单词作为标签页标题
-            QStringList commandParts = command.split(' ', Qt::SkipEmptyParts);  // 按空格分割命令
-            QString commandTitle = commandParts.isEmpty() ? "Unknown Command" : commandParts.first();  // 第一个单词作为标题
-
-            // 创建一个新的标签页显示命令执行结果
-            QWidget *resultWidget = new QWidget();
-            QVBoxLayout *resultLayout = new QVBoxLayout();
-
-            // 将响应内容显示在标签页中
-            QString responseText = QString(QJsonDocument(response).toJson(QJsonDocument::Indented));
-            resultLayout->addWidget(new QLabel(command));
-            resultLayout->addWidget(new QLabel("Response:"));
-            resultLayout->addWidget(new QLabel(responseText));  // 显示响应内容
-
-            resultWidget->setLayout(resultLayout);
-
-            // 将新标签页添加到 resultTabs，标题为命令的第一个单词
-            resultTabs->addTab(resultWidget, commandTitle);
+            executeCmdOrder(command);//复用命令行命令执行函数
         }
         // 清空输入框，准备下一个命令
         cmdInput->clear();
@@ -174,31 +153,66 @@ void MyMainWindow::executeCmdOrder(QString& command) {
     // 获取输入的命令并去掉首尾空格
     command.replace("\n", " ");  // 替换换行符为空格
 
-    // 发送命令
-            connector->sendOrder(command);
-            QJsonObject response = connector->receiveMassage();  // 接收响应
+    // 发送命令、接收响应
+    connector->sendOrder(command);
+    QJsonObject response = connector->receiveMassage();
+    QString responseText = QString(QJsonDocument(response).toJson(QJsonDocument::Indented));
 
-            //标签页标题
-            static int pageID=1;
-            QString commandTitle = QString::number(pageID++);
+    // 获取命令第一个单词作为标签页标题
+    QStringList commandParts = command.split(' ', Qt::SkipEmptyParts);
+    QString commandTitle = commandParts.isEmpty() ? "Unknown Command" : commandParts.first();
 
-            // 创建一个新的标签页显示命令执行结果
-            QWidget *resultWidget = new QWidget();
-            QVBoxLayout *resultLayout = new QVBoxLayout();
+    // 创建新的标签页 Widget
+    QWidget *resultWidget = new QWidget();
+    QVBoxLayout* resultLayout = new QVBoxLayout(resultWidget);
+    resultLayout->setSpacing(5);
+    resultLayout->setContentsMargins(5, 5, 5, 5);
 
-            // 将响应内容显示在标签页中
-            QString responseText = QString(QJsonDocument(response).toJson(QJsonDocument::Indented));
-            resultLayout->addWidget(new QLabel(command));
-            resultLayout->addWidget(new QLabel("Response:"));
-            resultLayout->addWidget(new QLabel(responseText));  // 显示响应内容
+    // 顶部显示命令原文
+    resultLayout->addWidget(new QLabel(command));
 
-            resultWidget->setLayout(resultLayout);
+    // 创建表格
+    QTableWidget* table = new QTableWidget();
+    table->setSelectionMode(QAbstractItemView::SingleSelection);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->verticalHeader()->setVisible(false);
+    table->setAlternatingRowColors(true);
 
-            // 将新标签页添加到 resultTabs，标题为命令的第一个单词
-            resultTabs->addTab(resultWidget, commandTitle);
+    // 尝试从 response["Mass"] 中解析表格数据
+    if (response.contains("Mass") && response["Mass"].isObject()) {
+        QJsonObject massObj = response["Mass"].toObject();
+        if (massObj.contains("Header") && massObj.contains("Data")) {
+            QJsonArray headers = massObj["Header"].toArray();
+            QJsonArray data = massObj["Data"].toArray();
 
-        // 清空输入框，准备下一个命令
-        cmdInput->clear();
+            table->setColumnCount(headers.size());
+            QStringList headerLabels;
+            for (const auto& h : headers) {
+                headerLabels << h.toString();
+            }
+            table->setHorizontalHeaderLabels(headerLabels);
+
+            table->setRowCount(data.size());
+            for (int i = 0; i < data.size(); ++i) {
+                QJsonArray row = data[i].toArray();
+                for (int j = 0; j < row.size(); ++j) {
+                    table->setItem(i, j, new QTableWidgetItem(row[j].toString()));
+                }
+            }
+        }
+    }
+
+    // 表格占据剩余空间
+    resultLayout->addWidget(table);
+
+    // 添加到标签页
+    resultTabs->addTab(resultWidget, commandTitle);
+
+    // 清空输入框，准备下一个命令
+    cmdInput->clear();
 
 }
 

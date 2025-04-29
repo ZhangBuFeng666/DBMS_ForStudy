@@ -178,6 +178,7 @@ void ClientSession::client_handle_recv() {
                             string result_message;
                             SelectResult select_result;
                             // 调用 SQLInterface 处理命令
+
                             bool cmd_success = sql_interface.process_sql_command(sql_statement, this->current_database, result_message, select_result);
 
                             return_json["Status"] = cmd_success ? u8"Success" : u8"Failure";

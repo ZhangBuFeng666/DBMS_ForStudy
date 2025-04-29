@@ -174,27 +174,44 @@ bool SQLInterface::process_sql_command(const std::string& sql, const std::string
         else { success = create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); result_message = success ? "表 '" + cmd.tableName + "' 创建成功。" : "错误: 创建表 '" + cmd.tableName + "' 失败。"; }
         break;
     case SQLCommand::DROP:
-        if (cmd.tableName.empty()) { result_message = "错误: 无效的 DROP TABLE 语句。"; success = false; }
+        if (cmd.tableName.empty()) { 
+            result_message = "错误: 无效的 DROP TABLE 语句。"; 
+            success = false; }
         else { success = drop_table(cmd.dbName, cmd.tableName); result_message = success ? "表 '" + cmd.tableName + "' 删除成功。" : "错误: 删除表 '" + cmd.tableName + "' 失败。"; }
         break;
     case SQLCommand::INSERT:
-        if (cmd.tableName.empty() || cmd.values.empty()) { result_message = "错误: 无效的 INSERT 语句。"; success = false; }
-        else { success = insert_into_table(cmd.dbName, cmd.tableName, cmd.values); result_message = success ? "数据插入成功。" : "错误: 插入数据失败。"; }
+        if (cmd.tableName.empty() || cmd.values.empty()) { 
+            result_message = "错误: 无效的 INSERT 语句。"; 
+            success = false; }
+        else { 
+            success = insert_into_table(cmd.dbName, cmd.tableName, cmd.values); 
+            result_message = success ? "数据插入成功。" : "错误: 插入数据失败。"; }
         break;
     case SQLCommand::UPDATE:
-        if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) { result_message = "错误: 无效的 UPDATE 语句。"; success = false; }
-        else { success = update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue); result_message = success ? "数据更新成功。" : "错误: 更新数据失败。"; /* TODO: 返回影响行数 */ }
+        if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) { 
+            result_message = "错误: 无效的 UPDATE 语句。"; 
+            success = false; }
+        else { 
+            success = update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue); 
+            result_message = success ? "数据更新成功。" : "错误: 更新数据失败。"; /* TODO: 返回影响行数 */ }
         break;
     case SQLCommand::DELETE_NEW:
-        if (cmd.tableName.empty() || !cmd.hasWhere) { result_message = "错误: 无效的 DELETE 语句。"; success = false; }
+        if (cmd.tableName.empty() || !cmd.hasWhere) { 
+            result_message = "错误: 无效的 DELETE 语句。"; 
+            success = false; }
         else { success = delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue); result_message = success ? "数据删除成功。" : "错误: 删除数据失败。"; /* TODO: 返回影响行数 */ }
         break;
     case SQLCommand::ALTER:
-        if (cmd.tableName.empty() || cmd.alterAction == SQLCommand::INVALID_ALTER) { result_message = "错误: 无效的 ALTER TABLE 语句。"; success = false; }
+        if (cmd.tableName.empty() || cmd.alterAction == SQLCommand::INVALID_ALTER) { 
+            result_message = "错误: 无效的 ALTER TABLE 语句。"; 
+            success = false; }
         else { success = alter_table(cmd); result_message = success ? "表修改成功。" : "错误: 修改表失败。"; }
         break;
     case SQLCommand::SELECT:
-        if (cmd.fromTable.empty() || cmd.selectColumns.empty()) { result_message = "错误: 无效的 SELECT 语句。"; success = false; }
+        if (cmd.fromTable.empty() || cmd.selectColumns.empty()) { 
+            result_message = "错误: 无效的 SELECT 语句。"; 
+            success = false;
+        }
         else {
             select_result = select_from_table(cmd); // 调用 select 方法获取结果
             success = select_result.success; // select 方法内部会设置 success 标志
