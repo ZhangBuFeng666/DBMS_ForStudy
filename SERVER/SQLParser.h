@@ -52,6 +52,10 @@ struct SQLCommand {
     bool hasWhere = false;          // 标记是否有 WHERE 子句
     std::string whereClauseStr;     // 存储原始 WHERE 子句字符串 (用于解析)
     std::string whereColumn;        // WHERE 列名 (用于 = 和 IN)
+    std::string whereOperator; //5.2-------------------------------
+    bool useIsNullClause; // 新增：是否是 IS NULL 子句
+    bool isNot;          // 新增：对于 IS NULL 子句，是否是 IS NOT NULL
+    //5.2------------------------------
     std::string whereValue;         // WHERE = 的比较值
     bool useInClause = false;       // 标记 WHERE 子句是否使用 IN
     std::vector<std::string> inValues; // WHERE IN (...) 的值列表

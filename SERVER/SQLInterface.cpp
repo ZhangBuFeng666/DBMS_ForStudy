@@ -20,6 +20,13 @@ namespace fs = std::filesystem; // 文件系统命名空间别名
 
 // === 内部辅助函数 (放在匿名命名空间中，限制作用域) ===
 namespace {
+
+    bool iequals(const string& a, const string& b) {
+        return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+            [](char a, char b) { return tolower(a) == tolower(b); });
+    }
+    //5.2_________________________________________
+
     // --- 文件读写辅助 ---
     vector<string> readLinesFromFile(const string& filepath) {
         vector<string> lines;
@@ -98,14 +105,32 @@ namespace {
         stringstream ss;
         for (size_t i = 0; i < values.size(); ++i) {
             string val = values[i];
-            bool needs_quoting = (val.find(',') != string::npos || val.find('\'') != string::npos || (!val.empty() && (val.front() == ' ' || val.back() == ' ')));
-            if (needs_quoting) {
-                size_t pos = val.find('\'');
-                while (pos != string::npos) { val.replace(pos, 1, "''"); pos = val.find('\'', pos + 2); }
-                ss << '\'' << val << '\'';
+
+            // NULL 值处理（空字符串）
+            if (val.empty()) {
+                if (i < values.size() - 1) ss << ",";
+                continue;
             }
-            else { ss << val; }
-            if (i < values.size() - 1) { ss << ","; }
+
+            bool needsQuoting = (val.find(',') != string::npos ||
+                val.find('"') != string::npos ||
+                val.find('\'') != string::npos ||
+                (!val.empty() && (val.front() == ' ' || val.back() == ' ')));
+
+            if (needsQuoting) {
+                // 转义单引号
+                string escaped;
+                for (char c : val) {
+                    if (c == '\'') escaped += "''";
+                    else escaped += c;
+                }
+                ss << "'" << escaped << "'";
+            }
+            else {
+                ss << val;
+            }
+
+            if (i < values.size() - 1) ss << ",";
         }
         return ss.str();
     }
@@ -472,36 +497,259 @@ bool SQLInterface::alter_table(const SQLCommand& cmd) {
     }
 
     default:
-        cerr << "错误: 不支持的 ALTER TABLE 操作类型。" << endl;
+        cerr << "错误: 不支持的 ALTER TABLE 操作类型。" << endl; 
         return false;
     } // 结束 switch(cmd.alterAction)
 } // 结束 alter_table
 
 // --- 数据操作 (DML) (保持不变) ---
-bool SQLInterface::insert_into_table(const string& dbName, const string& tableName, const vector<string>& values) { /* ... 实现 ... */
-    string dataPath = COMMONDATA_ROOT + tableName + ".trd"; string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/"; string ticPath = metaDir + tableName + ".tic";
-    if (!fs::exists(ticPath)) { cerr << "错误: 无法找到表 '" << tableName << "' 的类型定义文件 (.tic)。" << endl; return false; }
-    vector<string> fieldTypes = parseFieldTypes(dbName, tableName); if (fieldTypes.empty()) { cerr << "错误: 未能从 .tic 文件加载字段类型。" << endl; return false; }
-    if (values.size() != fieldTypes.size()) { cerr << "错误: 插入的值数量 (" << values.size() << ") 与表定义的字段数量 (" << fieldTypes.size() << ") 不匹配。" << endl; return false; }
-    for (size_t i = 0; i < values.size(); ++i) { if (!validateValueType(fieldTypes[i], values[i])) { cerr << "错误: 第 " << (i + 1) << " 个值 '" << values[i] << "' 的类型不符合字段要求的类型 '" << fieldTypes[i] << "'。" << endl; return false; } }
-    string rowData = joinToCsvRow(values);
-    ofstream dataFile(dataPath, ios::app); if (!dataFile.is_open()) { cerr << "错误: 无法打开数据文件进行追加: " << dataPath << endl; return false; }
-    dataFile << rowData << "\n"; bool success = dataFile.good(); dataFile.close();
-    if (!success) { cerr << "错误: 写入数据到文件 " << dataPath << " 失败。" << endl; } return success;
+bool SQLInterface::insert_into_table(const string& dbName, const string& tableName, const vector<string>& values) {
+    string dataPath = COMMONDATA_ROOT + tableName + ".trd";
+    string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
+    string ticPath = metaDir + tableName + ".tic";
+
+    if (!fs::exists(ticPath)) {
+        cerr << "错误: 无法找到表 '" << tableName << "' 的类型定义文件 (.tic)。" << endl;
+        return false;
+    }
+
+    vector<string> fieldTypes = parseFieldTypes(dbName, tableName);
+    if (fieldTypes.empty()) {
+        cerr << "错误: 未能从 .tic 文件加载字段类型。" << endl;
+        return false;
+    }
+
+    if (values.size() != fieldTypes.size()) {
+        cerr << "错误: 插入的值数量 (" << values.size() << ") 与表定义的字段数量 (" << fieldTypes.size() << ") 不匹配。" << endl;
+        return false;
+    }
+
+    // 处理并验证值
+    vector<string> processedValues;
+    for (size_t i = 0; i < values.size(); ++i) {
+        string trimmedVal = trim(values[i]);
+        bool isNull = (trimmedVal.empty() || iequals(trimmedVal, "NULL"));
+
+        if (!isNull && !validateValueType(fieldTypes[i], values[i])) {
+            cerr << "错误: 第 " << (i + 1) << " 个值 '" << values[i]
+                << "' 的类型不符合字段要求的类型 '" << fieldTypes[i] << "'。" << endl;
+            return false;
+        }
+        processedValues.push_back(isNull ? "" : values[i]);
+    }
+
+    string rowData = joinToCsvRow(processedValues);
+    ofstream dataFile(dataPath, ios::app);
+    if (!dataFile.is_open()) {
+        cerr << "错误: 无法打开数据文件进行追加: " << dataPath << endl;
+        return false;
+    }
+
+    dataFile << rowData << "\n";
+    bool success = dataFile.good();
+    dataFile.close();
+
+    if (!success) {
+        cerr << "错误: 写入数据到文件 " << dataPath << " 失败。" << endl;
+    }
+    else {
+        cout << "插入成功: " << rowData << endl;
+    }
+    return success;
 }
 bool SQLInterface::update_table_row(const string& dbName, const string& tableName,
     const vector<pair<string, string>>& setClauses,
-    const string& whereColumn, const string& whereValue) { /* ... 实现 ... */
-    string dataPath = COMMONDATA_ROOT + tableName + ".trd"; string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/"; string tdfPath = metaDir + tableName + ".tdf"; string ticPath = metaDir + tableName + ".tic";
-    if (setClauses.empty()) { cerr << "错误: UPDATE 语句必须包含至少一个 SET 子句。" << endl; return false; } if (whereColumn.empty()) { cerr << "错误: UPDATE 语句当前需要一个 'WHERE 字段 = 值' 子句。" << endl; return false; } if (!fs::exists(dataPath) || !fs::exists(tdfPath) || !fs::exists(ticPath)) { cerr << "错误: 表 '" << tableName << "' 的数据或元数据文件 (.trd, .tdf, .tic) 未找到。" << endl; return false; }
-    auto columns = readLinesFromFile(tdfPath); auto types = readLinesFromFile(ticPath); if (columns.empty() || columns.size() != types.size()) { cerr << "错误: 表 '" << tableName << "' 的元数据文件 (.tdf/.tic) 不一致或为空。" << endl; return false; }
-    int whereIndex = findColumnIndex(dbName, tableName, whereColumn, METADATA_DB_ROOT); if (whereIndex == -1) { cerr << "错误: WHERE 子句中的列 '" << whereColumn << "' 在表 '" << tableName << "' 中未找到。" << endl; return false; }
+    const string& whereColumn, const string& whereValue) {
+
+    string dataPath = COMMONDATA_ROOT + tableName + ".trd";
+    string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
+    string tdfPath = metaDir + tableName + ".tdf";
+    string ticPath = metaDir + tableName + ".tic";
+
+    if (setClauses.empty()) {
+        cerr << "错误: UPDATE 语句必须包含至少一个 SET 子句。" << endl;
+        return false;
+    }
+
+    if (whereColumn.empty()) {
+        cerr << "错误: UPDATE 语句需要一个 WHERE 子句。" << endl;
+        return false;
+    }
+
+    if (!fs::exists(dataPath) || !fs::exists(tdfPath) || !fs::exists(ticPath)) {
+        cerr << "错误: 表 '" << tableName << "' 的数据或元数据文件未找到。" << endl;
+        return false;
+    }
+
+    auto columns = readLinesFromFile(tdfPath);
+    auto types = readLinesFromFile(ticPath);
+
+    if (columns.empty() || columns.size() != types.size()) {
+        cerr << "错误: 表元数据文件不一致或为空。" << endl;
+        return false;
+    }
+
+    int whereIndex = findColumnIndex(dbName, tableName, whereColumn, METADATA_DB_ROOT);
+    if (whereIndex == -1) {
+        cerr << "错误: WHERE 列 '" << whereColumn << "' 不存在。" << endl;
+        return false;
+    }
+
+    // 解析 WHERE 条件和运算符
+    string actualWhereValue = whereValue;
+    string whereOp = "="; // 默认运算符
+
+    // 检查 whereValue 是否包含运算符（如 ">20"）
+    if (whereValue.size() > 1 && (whereValue[0] == '>' || whereValue[0] == '<' || whereValue[0] == '=')) {
+        // 处理 >= 和 <=
+        if (whereValue.size() > 1 && whereValue[1] == '=') {
+            whereOp = whereValue.substr(0, 2);
+            actualWhereValue = whereValue.substr(2);
+        }
+        // 处理 <> 
+        else if (whereValue.size() > 1 && whereValue[0] == '<' && whereValue[1] == '>') {
+            whereOp = "<>";
+            actualWhereValue = whereValue.substr(2);
+        }
+        // 处理 > 或 <
+        else {
+            whereOp = whereValue.substr(0, 1);
+            actualWhereValue = whereValue.substr(1);
+        }
+    }
+
+    // 验证运算符是否合法
+    if (whereOp != "=" && whereOp != "<>" && whereOp != ">" &&
+        whereOp != ">=" && whereOp != "<" && whereOp != "<=") {
+        cerr << "错误: 不支持的比较运算符 '" << whereOp << "'" << endl;
+        return false;
+    }
+
+    // 验证 WHERE 列的类型是否支持该运算符
+    string whereColType = types[whereIndex];
+    if ((whereOp == ">" || whereOp == ">=" || whereOp == "<" || whereOp == "<=") &&
+        whereColType != "INT") {
+        cerr << "错误: 比较运算符 " << whereOp << " 只能用于 INT 类型列" << endl;
+        return false;
+    }
+
+    // SET 子句处理（保持不变）
     map<int, string> setIndexToValue;
-    for (const auto& pair : setClauses) { int setIndex = findColumnIndex(dbName, tableName, pair.first, METADATA_DB_ROOT); if (setIndex == -1) { cerr << "错误: SET 子句中的列 '" << pair.first << "' 在表 '" << tableName << "' 中未找到。" << endl; return false; } if (!validateValueType(types[setIndex], pair.second)) { cerr << "错误: 为列 '" << pair.first << "' (类型 " << types[setIndex] << ") 提供的值 '" << pair.second << "' 类型无效。" << endl; return false; } setIndexToValue[setIndex] = pair.second; }
-    string tempPath = dataPath + ".tmp"; vector<string> lines = readLinesFromFile(dataPath); vector<string> newLines; newLines.reserve(lines.size()); int updatedRows = 0; int lineNum = 0;
-    for (const string& line : lines) { lineNum++; if (line.empty()) continue; vector<string> values = parseCsvRow(line); if (values.size() != columns.size()) { cerr << "警告 (行 " << lineNum << "): UPDATE 时行数据列数 (" << values.size() << ") 与表定义 (" << columns.size() << ") 不符，保留原始行: " << line << endl; newLines.push_back(line); continue; } bool match = false; if (whereIndex < values.size()) { if (values[whereIndex] == whereValue) { match = true; } } else { cerr << "警告 (行 " << lineNum << "): WHERE 列索引 " << whereIndex << " 超出范围，保留原始行。" << endl; newLines.push_back(line); continue; } if (match) { for (const auto& [index, newValue] : setIndexToValue) { if (index < values.size()) { values[index] = newValue; } } newLines.push_back(joinToCsvRow(values)); updatedRows++; } else { newLines.push_back(line); } }
-    if (!writeLinesToFile(tempPath, newLines)) { cerr << "错误: 写入更新后的数据到临时文件失败。" << endl; fs::remove(tempPath); return false; } error_code ec; fs::remove(dataPath, ec); if (ec && ec != errc::no_such_file_or_directory) { cerr << "错误: 删除旧数据文件失败: " << ec.message() << endl; fs::remove(tempPath); return false; } fs::rename(tempPath, dataPath, ec); if (ec) { cerr << "错误: 重命名临时数据文件失败: " << ec.message() << endl; return false; }
-    cout << "更新成功。共有 " << updatedRows << " 行受到影响。" << endl; return true;
+    for (const auto& pair : setClauses) {
+        int setIndex = findColumnIndex(dbName, tableName, pair.first, METADATA_DB_ROOT);
+        if (setIndex == -1) {
+            cerr << "错误: SET 列 '" << pair.first << "' 不存在。" << endl;
+            return false;
+        }
+
+        string trimmedVal = trim(pair.second);
+        bool isNull = (trimmedVal.empty() || iequals(trimmedVal, "NULL"));
+
+        if (!isNull && !validateValueType(types[setIndex], pair.second)) {
+            cerr << "错误: 值 '" << pair.second << "' 类型无效。" << endl;
+            return false;
+        }
+        setIndexToValue[setIndex] = isNull ? "" : pair.second;
+    }
+
+    // 处理数据文件
+    string tempPath = dataPath + ".tmp";
+    vector<string> lines = readLinesFromFile(dataPath);
+    vector<string> newLines;
+    newLines.reserve(lines.size());
+    int updatedRows = 0;
+    int lineNum = 0;
+
+    for (const string& line : lines) {
+        lineNum++;
+        if (line.empty()) continue;
+
+        vector<string> values = parseCsvRow(line);
+        if (values.size() != columns.size()) {
+            cerr << "警告 (行 " << lineNum << "): 列数不匹配，保留原始行。" << endl;
+            newLines.push_back(line);
+            continue;
+        }
+
+        bool match = false;
+        if (whereIndex < values.size()) {
+            string& valueToCheck = values[whereIndex];
+            bool valueIsNull = (valueToCheck.empty() || valueToCheck == "NULL");
+            bool compareValueIsNull = (actualWhereValue.empty() || iequals(actualWhereValue, "NULL"));
+
+            // 处理 IS NULL/IS NOT NULL
+            if (compareValueIsNull) {
+                if (whereOp == "=") {
+                    match = valueIsNull;
+                }
+                else if (whereOp == "<>") {
+                    match = !valueIsNull;
+                }
+                // 其他运算符对 NULL 比较都返回 false
+            }
+            // 处理常规比较
+            else if (!valueIsNull) {
+                if (whereOp == "=") {
+                    match = (valueToCheck == actualWhereValue);
+                }
+                else if (whereOp == "<>") {
+                    match = (valueToCheck != actualWhereValue);
+                }
+                else if (whereColType == "INT") {
+                    try {
+                        int val = stoi(valueToCheck);
+                        int compareVal = stoi(actualWhereValue);
+
+                        if (whereOp == ">") match = (val > compareVal);
+                        else if (whereOp == ">=") match = (val >= compareVal);
+                        else if (whereOp == "<") match = (val < compareVal);
+                        else if (whereOp == "<=") match = (val <= compareVal);
+                    }
+                    catch (...) {
+                        cerr << "警告 (行 " << lineNum << "): 无法转换为 INT 进行比较" << endl;
+                    }
+                }
+            }
+        }
+
+        if (match) {
+            // 应用 SET 更新
+            for (const auto& [index, newValue] : setIndexToValue) {
+                if (index < values.size()) {
+                    values[index] = newValue;
+                }
+            }
+            newLines.push_back(joinToCsvRow(values));
+            updatedRows++;
+        }
+        else {
+            newLines.push_back(line);
+        }
+    }
+
+    // 文件操作（保持不变）
+    if (!writeLinesToFile(tempPath, newLines)) {
+        cerr << "错误: 写入临时文件失败。" << endl;
+        fs::remove(tempPath);
+        return false;
+    }
+
+    error_code ec;
+    fs::remove(dataPath, ec);
+    if (ec && ec != errc::no_such_file_or_directory) {
+        cerr << "错误: 删除旧文件失败: " << ec.message() << endl;
+        fs::remove(tempPath);
+        return false;
+    }
+
+    fs::rename(tempPath, dataPath, ec);
+    if (ec) {
+        cerr << "错误: 重命名失败: " << ec.message() << endl;
+        return false;
+    }
+
+    cout << "更新成功。更新了 " << updatedRows << " 行。" << endl;
+    return true;
 }
 bool SQLInterface::delete_table_row(const string& dbName, const string& tableName,
     const string& whereColumn, const string& whereValue) { /* ... 实现 ... */
@@ -528,12 +776,57 @@ vector<string> SQLInterface::parseFieldTypes(const string& dbName, const string&
     string ticPath = METADATA_DB_ROOT + dbName + "/" + tableName + "/" + tableName + ".tic"; if (!fs::exists(ticPath)) { cerr << "错误: 类型文件不存在: " << ticPath << endl; return {}; } vector<string> types = readLinesFromFile(ticPath); vector<string> validated_types;
     for (const string& t : types) { string trimmed_type = trim(t); if (!trimmed_type.empty()) { if (validateFieldType(trimmed_type)) { validated_types.push_back(trimmed_type); } else { cerr << "警告: 在 " << ticPath << " 中发现无效的类型定义: '" << t << "'" << endl; return {}; } } } return validated_types;
 }
-bool SQLInterface::validateValueType(const string& type, const string& value) { /* ... 实现 ... */
-    int charLen = -1; if (parseCharLength(type, charLen)) { return value.length() <= charLen; }
-    else if (type == "INT") { try { size_t p = 0; stoi(value, &p); return p == value.length(); } catch (...) { return false; } }
-    else if (type == "DATE") { static const regex dateRegex(R"(^\d{4}-\d{2}-\d{2}$)"); return regex_match(value, dateRegex); }
-    else if (type == "BOOL") { string lowerVal = value; transform(lowerVal.begin(), lowerVal.end(), lowerVal.begin(), ::tolower); return lowerVal == "true" || lowerVal == "false" || lowerVal == "1" || lowerVal == "0"; }
-    cerr << "警告: 未知的字段类型用于值校验: " << type << endl; return false;
+
+//这个也要改，5.2
+bool SQLInterface::validateValueType(const string& type, const string& value) {
+    // 首先检查是否为 NULL 值（空字符串或"NULL"字符串）
+    string trimmedValue = trim(value);
+    bool isNull = (trimmedValue.empty() || iequals(trimmedValue, "NULL"));
+    if (isNull) {
+        return true; // NULL 值允许用于任何类型字段
+    }
+
+    // 检查 CHAR/VARCHAR 类型
+    int charLen = -1;
+    if (parseCharLength(type, charLen)) {
+        return value.length() <= charLen;
+    }
+    // 检查 INT 类型
+    else if (type == "INT") {
+        try {
+            size_t p = 0;
+            stoi(value, &p);
+            return p == value.length(); // 确保整个字符串都是有效数字
+        }
+        catch (...) {
+            return false;
+        }
+    }
+    // 检查 DATE 类型
+    else if (type == "DATE") {
+        static const regex dateRegex(R"(^\d{4}-\d{2}-\d{2}$)");
+        return regex_match(value, dateRegex);
+    }
+    // 检查 BOOL 类型
+    else if (type == "BOOL") {
+        string lowerVal = value;
+        transform(lowerVal.begin(), lowerVal.end(), lowerVal.begin(), ::tolower);
+        return lowerVal == "true" || lowerVal == "false" || lowerVal == "1" || lowerVal == "0";
+    }
+    // 检查 FLOAT 类型（新增）
+    else if (type == "FLOAT") {
+        try {
+            size_t p = 0;
+            stof(value, &p);
+            return p == value.length();
+        }
+        catch (...) {
+            return false;
+        }
+    }
+
+    cerr << "警告: 未知的字段类型 '" << type << "' 用于值校验，值: '" << value << "'" << endl;
+    return false;
 }
 
 
@@ -690,37 +983,82 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         }
 
         // 应用 WHERE 条件过滤
-        bool keepRow = true; // 默认保留该行
+        // 应用 WHERE 条件过滤
+        bool keepRow = true;
         if (cmd.hasWhere) {
             if (whereColIndex < 0 || whereColIndex >= rawValues.size()) {
-                // 理论上不应发生
                 cerr << "内部错误 (行 " << lineNum << "): WHERE 列索引 " << whereColIndex << " 无效。" << endl;
-                keepRow = false; // 跳过此行
+                keepRow = false;
             }
             else {
-                string& valueToCheck = rawValues[whereColIndex]; // 获取待检查的值
-                if (cmd.useInClause) {
-                    // 处理 WHERE ... IN (...)
-                    bool foundInList = false;
-                    // cout << "调试 (行 " << lineNum << "): 检查 '" << valueToCheck << "' 是否在 IN 列表中..." << endl;
-                    for (const string& inVal : cmd.inValues) {
-                        // **重要**: 当前是字符串比较。对于数字等需要类型转换比较！
-                        if (valueToCheck == inVal) {
-                            foundInList = true;
-                            // cout << "调试 (行 " << lineNum << "): 匹配到 IN 值 '" << inVal << "'" << endl;
-                            break;
+                string& valueToCheck = rawValues[whereColIndex];
+                bool valueIsNull = (valueToCheck.empty() || valueToCheck == "NULL");
+
+                // 1. 处理 IS NULL/IS NOT NULL
+                if (cmd.useIsNullClause) {
+                    keepRow = valueIsNull ^ cmd.isNot; // XOR: IS NULL 时 valueIsNull 为真则保留
+                    // IS NOT NULL 时 valueIsNull 为假则保留
+                }
+                // 2. 处理 IN 子句
+                else if (cmd.useInClause) {
+                    if (valueIsNull) {
+                        keepRow = false; // NULL 不匹配任何 IN 列表
+                    }
+                    else {
+                        keepRow = false;
+                        for (const string& inVal : cmd.inValues) {
+                            if (valueToCheck == inVal) {
+                                keepRow = true;
+                                break;
+                            }
                         }
                     }
-                    if (!foundInList) {
-                        keepRow = false; // 不在 IN 列表中，则不保留
-                    }
                 }
+                // 3. 处理常规比较 (=, <>)
                 else {
-                    // 处理 WHERE ... = ...
-                     // cout << "调试 (行 " << lineNum << "): 检查 '" << valueToCheck << "' 是否等于 '" << cmd.whereValue << "'" << endl;
-                    // **重要**: 当前是字符串比较。
-                    if (valueToCheck != cmd.whereValue) {
-                        keepRow = false; // 不相等，则不保留
+                    bool compareValueIsNull = (cmd.whereValue.empty());
+
+                    if (valueIsNull || compareValueIsNull) {
+                        // NULL 的特殊比较逻辑
+                        if (cmd.whereOperator == "=") {
+                            keepRow = (valueIsNull && compareValueIsNull); // NULL = NULL 为假
+                        }
+                        else if (cmd.whereOperator == "<>") {
+                            keepRow = !(valueIsNull && compareValueIsNull); // NULL <> NULL 为假
+                        }
+                        else if (cmd.whereOperator == ">") {
+                            keepRow = false;
+                        }
+                        else if (cmd.whereOperator == ">=") {
+                            keepRow = false;
+                        }
+                        else if (cmd.whereOperator == "<") {
+                            keepRow = false;
+                        }
+                        else if (cmd.whereOperator == "<=") {
+                            keepRow = false;
+                        }
+                    }
+                    else {
+                        // 常规值比较
+                        if (cmd.whereOperator == "=") {
+                            keepRow = (valueToCheck == cmd.whereValue);
+                        }
+                        else if (cmd.whereOperator == "<>") {
+                            keepRow = (valueToCheck != cmd.whereValue);
+                        }
+                        else if (cmd.whereOperator == ">") {
+                            keepRow = (valueToCheck > cmd.whereValue);
+                        }
+                        else if (cmd.whereOperator == ">=") {
+                            keepRow = (valueToCheck >= cmd.whereValue);
+                        }
+                        else if (cmd.whereOperator == "<") {
+                            keepRow = (valueToCheck < cmd.whereValue);
+                        }
+                        else if (cmd.whereOperator == "<=") {
+                            keepRow = (valueToCheck <= cmd.whereValue);
+                        }
                     }
                 }
             }
@@ -742,7 +1080,14 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         projectedRow.reserve(selectedColumnIndices.size());
         for (int index : selectedColumnIndices) { // 遍历需要选择的列的原始索引
             if (index >= 0 && index < rawRow.size()) {
-                projectedRow.push_back(rawRow[index]); // 从原始行中取出对应索引的值
+                // 修改开始：将空值显示为"NULL"
+                if (rawRow[index].empty()) {
+                    projectedRow.push_back("NULL");
+                }
+                else {
+                    projectedRow.push_back(rawRow[index]);
+                }
+                // 修改结束
             }
             else {
                 // 索引无效，这通常是内部逻辑错误
