@@ -1,10 +1,6 @@
 ﻿  Client.cpp
-  SQLInterface.cpp
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SQLInterface.cpp(411,40): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SQLInterface.cpp(536,55): warning C4834: 放弃具有 [[nodiscard]] 属性的函数的返回值
-  SQLParser.cpp
-  Server.cpp
-  main.cpp
+  FileManager.cpp
   test.cpp
   正在生成代码...
+SERVER\x64\Debug\DiffPlat.obj : warning LNK4042: 对象被多次指定；已忽略多余的指定
   SERVER.vcxproj -> F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\x64\Debug\SERVER.exe

@@ -159,8 +159,6 @@ void ClientSession::client_handle_recv() {
                                     return_json["Status"] = u8"Failure";
                                     return_json["Mass"] = u8"错误: 用户名或密码错误。";
                                 }
-                            else {
-                                return_json["Mass"] = "错误: Login 的 Mass 格式应为 '用户名 密码'。";
                             }
                             
                             break;
