@@ -49,7 +49,7 @@ vector<string> SQLParser::split_values(const string& input) {
             // 检查是否为未加引号的NULL（不区分大小写）
             if (iequals(val, "NULL")) {
                 result.push_back("");
-            }
+    }
             else {
                 result.push_back(val);
             }
@@ -174,8 +174,8 @@ void SQLParser::parse_set_clause(const std::string& setClauseStr, SQLCommand& cm
 // 参数: whereClauseStrFull - 包含 "WHERE" 关键字的完整子句字符串
 // 返回: true 如果解析成功 (即使是空条件), false 如果格式错误
 bool SQLParser::parse_where_clause(const std::string& whereClauseStrFull, SQLCommand& cmd) {
-    string whereClause = trim(whereClauseStrFull);
-    cmd.hasWhere = false;
+    string whereClause = trim(whereClauseStrFull); // 去除首尾空白
+    cmd.hasWhere = false; // 重置状态
     cmd.useInClause = false;
     cmd.whereColumn = "";
     cmd.whereValue = "";
@@ -218,7 +218,7 @@ bool SQLParser::parse_where_clause(const std::string& whereClauseStrFull, SQLCom
     regex whereInRegex(R"(WHERE\s+(\w+)\s+IN\s*\((.*?)\)\s*;?)", regex::icase);
     smatch matchIn;
     if (regex_match(whereClause, matchIn, whereInRegex)) {
-        cmd.hasWhere = true;
+        cmd.hasWhere = true; // 确认有有效的 WHERE 条件
         cmd.useInClause = true;
         cmd.whereColumn = matchIn[1].str();
         cmd.inValues = split_values(matchIn[2].str());

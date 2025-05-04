@@ -13,6 +13,7 @@
 #include <atomic>
 #include <chrono>
 #include <unordered_map> // 用于 CommandType 映射
+#include <nlohmann/json.hpp>// 确保包含 json.hpp 头文件
 
 class ClientSession {
 public:
@@ -36,7 +37,7 @@ public:
     ~ClientSession();
 
     //（原始）外部接口
-    bool send_massage(const nlohmann::json& data);
+    bool send_massage(nlohmann::json& data);
 
     // 获取最后活动时间
     auto get_last_active() const { return last_active; }
@@ -75,7 +76,7 @@ private:
 
 
     enum class RecvStatusType {
-        REGISTER,
+        //REGISTER,
         Login,
         Order,
         Unknown

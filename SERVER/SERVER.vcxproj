@@ -144,7 +144,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="SQLInterface.cpp" />
     <ClCompile Include="SQLParser.cpp" />
-    <ClCompile Include="testmain.cpp" />
+    <ClCompile Include="test.cpp" />
     <ClCompile Include="ThreadPool.cpp" />
     <ClCompile Include="NotNull.cpp" />
     <ClCompile Include="ObjectTypes.cpp" />
