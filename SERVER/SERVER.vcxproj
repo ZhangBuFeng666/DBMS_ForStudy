@@ -132,7 +132,7 @@
   <ItemGroup>
     <ClCompile Include="BPlusTree.cpp" />
     <ClCompile Include="BufferManager.cpp" />
-    <ClCompile Include="ChangeLog.cpp" />
+    <ClCompile Include="Logger.cpp" />
     <ClCompile Include="Client.cpp" />
     <ClCompile Include="DiffPlat.cpp" />
     <ClCompile Include="DiffPlat.h" />

@@ -96,7 +96,7 @@
     <ClCompile Include="SocketManager.cpp">
       <Filter>源文件\Network</Filter>
     </ClCompile>
-    <ClCompile Include="ChangeLog.cpp">
+    <ClCompile Include="Logger.cpp">
       <Filter>源文件\Log</Filter>
     </ClCompile>
     <ClCompile Include="RecoverManager.cpp">

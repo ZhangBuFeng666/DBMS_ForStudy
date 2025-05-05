@@ -22,12 +22,5 @@ namespace tools
     size_t find_json_end(const std::string& buffer);
 
 
-    // GBK → UTF-8 编码转换
-    std::string gbk_to_utf8(const std::string& gbk_str);
-    // 递归处理 json，将所有字符串转为 UTF-8 编码
-    void convert_json_strings_to_utf8(json& j);
-    // UTF-8 → GBK 编码转换
-
-    std::string utf8_to_gbk(const std::string& utf8_str);
 
 }

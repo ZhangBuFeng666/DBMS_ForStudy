@@ -124,23 +124,17 @@ void ClientSession::client_handle_recv() {
                                 return_json["Mass"] = u8"错误: 用户已登录!";
                                 break;
                             }
-                            if (!mass.is_string()) {
-                                return_json["Mass"] = "错误: Login 的 Mass 必须是字符串 '用户名 密码'。"; break;
-                            }
-                            string login_info = mass.get<string>();
-                            stringstream ss(login_info);
                             string username, password;
 
                             if (mass.contains("ID") && mass.contains("Password")) {
                                 username = mass["ID"];
                                 password = mass["Password"];
                             }
-                            else {
+                           else {
                                 std::cerr << "mass字段不存在或格式错误\n";
                                 break;
                             }
-                            //string login_info = mass.get<string>();
-                            //stringstream ss(login_info);
+
                             if (username.empty() || password.empty()) {
                                 return_json["Mass"] = u8"错误: 用户名或密码不能为空。";
                                 break;

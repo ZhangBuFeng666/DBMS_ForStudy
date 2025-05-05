@@ -1,6 +1,2 @@
 ﻿  Client.cpp
-  FileManager.cpp
-  test.cpp
-  正在生成代码...
-SERVER\x64\Debug\DiffPlat.obj : warning LNK4042: 对象被多次指定；已忽略多余的指定
   SERVER.vcxproj -> F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\x64\Debug\SERVER.exe

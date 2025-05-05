@@ -51,6 +51,8 @@ out/
 .vs/
 build/
 x64/
+docs/
+Doxyfile
 *.ib_pdb_index
 *.idb
 *.ilk
