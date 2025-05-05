@@ -3,37 +3,67 @@
 #include <iostream> // 用于调试输出
 #include <string>   // 确保包含 string
 #include <vector>   // 确保包含 vector
+#include <algorithm>
+#include <cctype>
 
 using namespace std;
 
 
+static bool iequals(const string& a, const string& b) {
+    return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+        [](char a, char b) { return tolower(a) == tolower(b); });
+}
+//修改5.2
+
 // --- 分割逗号分隔的值 (增强版，处理引号) ---
 vector<string> SQLParser::split_values(const string& input) {
     vector<string> result;
-    // 正则表达式：匹配被单引号包围的字符串（允许内部连续两个单引号表示一个单引号）或不包含逗号且非引号开头的普通值
-    // \s*                                    # 匹配前导空格
-    // (?:                                    # 开始非捕获组 (用于选择)
-    //   '((?:[^']|'')*)'                      # 匹配单引号包围的值 (捕获组 1):
-    //                                          #   '...' 内可以包含非单引号字符 ([^']) 或连续两个单引号 ('')
-    //   |                                      # 或者
-    //   ([^',]+)                              # 匹配不包含单引号和逗号的非空值 (捕获组 2)
-    // )                                      # 结束非捕获组
-    // \s*                                    # 匹配尾随空格
-    // ,?                                     # 匹配可选的逗号
-    regex valueRegex(R"(\s*(?:'((?:[^']|'')*)'|([^',]+))\s*,?)");
+    // 修改后的正则表达式说明：
+    // 1. \s*                                   # 前导空格
+    // 2. (?:                                   # 非捕获组开始
+    //      '((?:[^']|'')*)'                    # 单引号字符串 (捕获组1)
+    //      |                                   # 或
+    //      (NULL)                              # NULL关键字 (捕获组2)
+    //      |                                   # 或
+    //      ([^',]+)                            # 非引号普通值 (捕获组3)
+    //    )                                     # 非捕获组结束
+    // 3. \s*                                   # 尾随空格
+    // 4. ,?                                    # 可选逗号
+    regex valueRegex(R"(\s*(?:'((?:[^']|'')*)'|(NULL)|([^',]+))\s*,?)", regex::icase);
+
     auto begin = sregex_iterator(input.begin(), input.end(), valueRegex);
     auto end = sregex_iterator();
 
     for (auto it = begin; it != end; ++it) {
         smatch match = *it;
-        if (match[1].matched) { // 匹配到引号包围的值 (捕获组 1)
-            // 将连续两个单引号 ('') 替换回单个单引号 (')
+        if (match[1].matched) { // 匹配到引号包围的值
+            // 处理转义单引号 ('' -> ')
             result.push_back(regex_replace(match[1].str(), regex("''"), "'"));
         }
-        else if (match[2].matched) { // 匹配到非引号包围的值 (捕获组 2)
-            result.push_back(trim(match[2].str())); // 去除可能存在的前后空格
+        else if (match[2].matched) { // 匹配到NULL关键字
+            // 将NULL转为空字符串表示（根据我们的NULL处理约定）
+            result.push_back("");
+        }
+        else if (match[3].matched) { // 匹配到普通值
+            string val = trim(match[3].str());
+            // 检查是否为未加引号的NULL（不区分大小写）
+            if (iequals(val, "NULL")) {
+                result.push_back("");
+    }
+            else {
+                result.push_back(val);
+            }
         }
     }
+
+    // 调试输出
+    cout << "调试: 分割值列表 '" << input << "' => [";
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (i > 0) cout << ", ";
+        cout << (result[i].empty() ? "NULL" : "'" + result[i] + "'");
+    }
+    cout << "]" << endl;
+
     return result;
 }
 
@@ -117,8 +147,8 @@ void SQLParser::parse_set_clause(const std::string& setClauseStr, SQLCommand& cm
     //   ([^,]+)                          #   匹配不包含逗号的非引号值 (捕获组 3: 值内容)
     // )
     // \s*,?                              # 匹配可选的逗号和空格
-    regex setPairRegex(R"(\s*(\w+)\s*=\s*(?:'((?:[^']|'')*)'|([^,]+))\s*,?)");
-
+    regex setPairRegex(R"(\s*(\w+)\s*=\s*(?:'((?:[^']|'')*)'|NULL|([^,]+))\s*,?)", regex::icase);
+    //同样修改非空正则5.2-------------
     auto begin = sregex_iterator(setClauseStr.begin(), setClauseStr.end(), setPairRegex);
     auto end = sregex_iterator();
 
@@ -150,72 +180,65 @@ bool SQLParser::parse_where_clause(const std::string& whereClauseStrFull, SQLCom
     cmd.whereColumn = "";
     cmd.whereValue = "";
     cmd.inValues.clear();
+    cmd.useIsNullClause = false;
+    cmd.isNot = false;
 
-    if (whereClause.empty() || whereClause.rfind("WHERE", 0) != 0) { // 必须以 WHERE 开头 (忽略大小写)
-        // 如果传入的不是以 WHERE 开头的非空字符串，则认为格式错误
+    if (whereClause.empty() || whereClause.rfind("WHERE", 0) != 0) {
         if (!whereClause.empty()) {
             cerr << "错误: 无效的 WHERE 子句格式 (缺少 WHERE 关键字?): " << whereClauseStrFull << endl;
             return false;
         }
-        return true; // 空的或只有 WHERE 关键字也算“解析成功”，只是没有条件
+        return true;
     }
 
-
-    // 尝试匹配 'WHERE col = value' 格式
-    // WHERE\s+(\w+)\s*=\s*                    # WHERE col =
-    // (?:'((?:[^']|'')*)'|([^; ]+))          # value (带引号或不带引号直到分号或空格)
-    // \s*;?                                   # 可选分号
-    regex whereEqRegex(R"(WHERE\s+(\w+)\s*=\s*(?:'((?:[^']|'')*)'|([^; ]+))\s*;?)", regex::icase);
-    //   col(1)      'val'(2)   val(3)
-    smatch matchEq;
-    // 注意：这里用 regex_match 是因为我们期望整个 whereClause 字符串匹配这个模式
-    if (regex_match(whereClause, matchEq, whereEqRegex)) {
-        cmd.hasWhere = true; // 确认有有效的 WHERE 条件
+    // 修改正则表达式支持 >, >=, <, <=
+    regex whereCompRegex(R"(WHERE\s+(\w+)\s*(<>|>=|<=|=|>|<)\s*(?:'((?:[^']|'')*)'|([^; ]+))\s*;?)", regex::icase);
+    smatch matchComp;
+    if (regex_match(whereClause, matchComp, whereCompRegex)) {
+        cmd.hasWhere = true;
         cmd.useInClause = false;
-        cmd.whereColumn = matchEq[1].str();
-        if (matchEq[2].matched) { // 带引号的值
-            cmd.whereValue = regex_replace(matchEq[2].str(), regex("''"), "'");
+        cmd.whereColumn = matchComp[1].str();
+        cmd.whereOperator = matchComp[2].str();
+        if (matchComp[3].matched) {
+            cmd.whereValue = regex_replace(matchComp[3].str(), regex("''"), "'");
         }
-        else if (matchEq[3].matched) { // 不带引号的值
-            cmd.whereValue = trim(matchEq[3].str());
+        else if (matchComp[4].matched) {
+            cmd.whereValue = trim(matchComp[4].str());
         }
         else {
-            cmd.hasWhere = false; // 值解析失败
-            cerr << "错误: WHERE (=) 子句中无法解析值部分。" << endl;
+            cmd.hasWhere = false;
+            cerr << "错误: WHERE 子句中无法解析值部分。" << endl;
             return false;
         }
-        cout << "调试: 解析 WHERE (=) 成功。列: " << cmd.whereColumn << ", 值: '" << cmd.whereValue << "'" << endl;
-        return true; // 成功解析 '='
+        cout << "调试: 解析 WHERE 成功。列: " << cmd.whereColumn << ", 运算符: "
+            << cmd.whereOperator << ", 值: '" << cmd.whereValue << "'" << endl;
+        return true;
     }
 
-    // 如果 '=' 不匹配，尝试匹配 'WHERE col IN (val1, val2, ...)' 格式
-    // WHERE\s+(\w+)\s+IN\s*\((.*?)\)\s*;?    # WHERE col IN ( values ) ;
-    //    col(1)      values_str(2)
     regex whereInRegex(R"(WHERE\s+(\w+)\s+IN\s*\((.*?)\)\s*;?)", regex::icase);
     smatch matchIn;
     if (regex_match(whereClause, matchIn, whereInRegex)) {
         cmd.hasWhere = true; // 确认有有效的 WHERE 条件
         cmd.useInClause = true;
         cmd.whereColumn = matchIn[1].str();
-        string valuesListStr = matchIn[2].str();
-        // 使用 split_values 解析 IN 列表中的值
-        cmd.inValues = split_values(valuesListStr);
-
-        if (cmd.inValues.empty() && !trim(valuesListStr).empty()) {
-            cerr << "警告: 解析 WHERE IN 子句的值列表时可能出错或列表格式不正确: " << valuesListStr << endl;
-            // 即使解析值列表有问题，结构上 IN 还是匹配了，可能返回 true 让后续逻辑处理空列表
-        }
-        else if (cmd.inValues.empty()) {
-            cerr << "警告: WHERE IN 子句的值列表为空。" << endl;
-            // IN 一个空列表在 SQL 中通常不匹配任何行
-        }
-        cout << "调试: 解析 WHERE IN 成功。列: " << cmd.whereColumn << ", 值数量: " << cmd.inValues.size() << endl;
-        return true; // 成功解析 'IN'
+        cmd.inValues = split_values(matchIn[2].str());
+        cout << "调试: 解析 WHERE IN 成功。列: " << cmd.whereColumn << endl;
+        return true;
     }
 
-    // 如果两种格式都不匹配，但确实以 WHERE 开头
-    cerr << "错误: 无法解析 WHERE 子句，仅支持 'col = value' 或 'col IN (values)' 格式: " << whereClause << endl;
-    return false; // 格式不支持
+    regex whereIsNullRegex(R"(WHERE\s+(\w+)\s+IS\s+(NOT\s+)?NULL\s*;?)", regex::icase);
+    smatch matchIsNull;
+    if (regex_match(whereClause, matchIsNull, whereIsNullRegex)) {
+        cmd.hasWhere = true;
+        cmd.useIsNullClause = true;
+        cmd.whereColumn = matchIsNull[1].str();
+        cmd.isNot = matchIsNull[2].matched;
+        cout << "调试: 解析 WHERE IS " << (cmd.isNot ? "NOT " : "") << "NULL 成功" << endl;
+        return true;
+    }
+
+    cerr << "错误: 无法解析 WHERE 子句" << endl;
+    return false;
 }
 
 // --- 新增：解析 SELECT 列列表 ---

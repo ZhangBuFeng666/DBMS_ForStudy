@@ -1,21 +1,5 @@
 #include "Storage.h" // 通常你的 FileManager.h 文件可能命名为 Storage.h，这里保持一致
-// #include "Tools.h" // 如果 Tools.h 中有需要的功能，请包含
-#include <fstream>
-#include <vector>
-#include <map>
-#include <string>
-#include <regex>
-#include <filesystem> // C++17 文件系统库
-#include <iostream> // 用于调试输出
-
-// Windows 特定的头文件和库，用于文件/目录操作 (如果你只在 Windows 上运行)
-#ifdef _WIN32
-#include <Windows.h>
-#include <Shlwapi.h> // PathCanonicalizeA 需要
-#include <AccCtrl.h> // 可能需要，如果处理权限
-#include <Aclapi.h>  // 可能需要，如果处理权限
-#pragma comment(lib, "Shlwapi.lib") // 链接 Shlwapi 库
-#endif
+#include "Tools.h" // 如果 Tools.h 中有需要的功能，请包含
 
 // 确保命名空间被使用
 using namespace std;

@@ -3,6 +3,18 @@
 #include <vector>
 #include <map>
 #include <fstream> // 用于文件流操作
+#include <regex>
+#include <filesystem> // C++17 文件系统库
+#include <iostream> // 用于调试输出
+
+// Windows 特定的头文件和库，用于文件/目录操作 (如果你只在 Windows 上运行)
+#ifdef _WIN32
+#include <Windows.h>
+#include <Shlwapi.h> // PathCanonicalizeA 需要
+#include <AccCtrl.h> // 可能需要，如果处理权限
+#include <Aclapi.h>  // 可能需要，如果处理权限
+#pragma comment(lib, "Shlwapi.lib") // 链接 Shlwapi 库
+#endif
 
 /*
 文件系统架构说明 (与 SQLInterface 中的一致):

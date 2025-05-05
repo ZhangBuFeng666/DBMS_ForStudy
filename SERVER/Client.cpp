@@ -68,13 +68,13 @@ void ClientSession::client_handle_recv() {
 
                     cout << "链接ID:" << client_id << " 收到完整JSON: " << json_str << endl;
 
-                    json return_json = { {"Type", "Unknown"}, {"Status", "Failure"}, {"Mass", nullptr} }; // 初始化响应 JSON
+                    json return_json = { {"Type", u8"Unknown"}, {"Status", u8"Failure"}, {"Mass", u8""}}; // 初始化响应 JSON
 
                     try {
                         json received_json = json::parse(json_str); // 解析收到的 JSON
-                        if (!received_json.contains("Type") || !received_json.contains("Mass")) {
-                            cerr << "错误: 收到的 JSON 格式无效 (缺少 Type 或 Mass)。" << endl;
-                            return_json["Mass"] = "错误: 无效的请求格式。";
+                        if (!received_json.contains("Type")) {
+                            cerr << "错误: 收到的 JSON 格式无效 (缺少 Type)" << endl;
+                            return_json["Mass"] = u8"错误: 无效的请求格式。";
                             send_massage(return_json);
                             continue; // 处理下一个 JSON
                         }
@@ -87,40 +87,41 @@ void ClientSession::client_handle_recv() {
 
                         // --- 根据命令类型处理 ---
                         switch (cmd) {
-                        case RecvStatusType::REGISTER: {
-                            if (!mass.is_string()) {
-                                return_json["Mass"] = "错误: REGISTER 的 Mass 必须是字符串 '用户名 密码 [权限]'。"; break;
-                            }
-                            string reg_info = mass.get<string>();
-                            stringstream ss(reg_info);
-                            string username, password, privilege = "admin"; // 默认权限为 admin
-                            if (ss >> username >> password) { // 至少需要用户名和密码
-                                ss >> privilege; // 尝试读取权限，如果失败则使用默认值
-                                if (username.empty() || password.empty()) {
-                                    return_json["Mass"] = "错误: 用户名或密码不能为空。";
-                                }
-                                else {
-                                    cout << "处理 REGISTER: 用户=" << username << ", 密码=***, 权限=" << privilege << endl;
-                                    if (sql_interface.create_user(username, password, privilege)) {
-                                        return_json["Status"] = "Success";
-                                        return_json["Mass"] = "用户注册成功。";
-                                    }
-                                    else {
-                                        return_json["Status"] = "Failure";
-                                        return_json["Mass"] = "错误: 用户名可能已存在或注册失败。";
-                                    }
-                                }
-                            }
-                            else {
-                                return_json["Mass"] = "错误: REGISTER 的 Mass 格式应为 '用户名 密码 [权限]'。";
-                            }
-                            break;
-                        } // 结束 REGISTER
+                        //case RecvStatusType::REGISTER: {
+                        //    if (!mass.is_string()) {
+                        //        return_json["Mass"] = "错误: REGISTER 的 Mass 必须是字符串 '用户名 密码 [权限]'。";
+                        //        break;
+                        //    }
+                        //    string reg_info = mass.get<string>();
+                        //    stringstream ss(reg_info);
+                        //    string username, password, privilege = "admin"; // 默认权限为 admin
+                        //    if (ss >> username >> password) { // 至少需要用户名和密码
+                        //        ss >> privilege; // 尝试读取权限，如果失败则使用默认值
+                        //        if (username.empty() || password.empty()) {
+                        //            return_json["Mass"] = "错误: 用户名或密码不能为空。";
+                        //        }
+                        //        else {
+                        //            cout << "处理 REGISTER: 用户=" << username << ", 密码=***, 权限=" << privilege << endl;
+                        //            if (sql_interface.create_user(username, password, privilege)) {
+                        //                return_json["Status"] = "Success";
+                        //                return_json["Mass"] = "";
+                        //            }
+                        //            else {
+                        //                return_json["Status"] = "Failure";
+                        //                return_json["Mass"] = "错误: 用户名可能已存在或注册失败。";
+                        //            }
+                        //        }
+                        //    }
+                        //    else {
+                        //        return_json["Mass"] = "错误: REGISTER 的 Mass 格式应为 ‘用户名 密码 [权限]’!";
+                        //    }
+                        //    break;
+                        //} // 结束 REGISTER
 
                         case RecvStatusType::Login: {
-                            if (is_logged_in) { // 如果已登录，则不允许重复登录
-                                return_json["Status"] = "Failure";
-                                return_json["Mass"] = "错误: 用户已登录。";
+                            if (is_logged_in) { // 如果已登录，则不允许重复登录（虽然没必要）
+                                return_json["Status"] = u8"Failure";
+                                return_json["Mass"] = u8"错误: 用户已登录!";
                                 break;
                             }
                             if (!mass.is_string()) {
@@ -129,44 +130,54 @@ void ClientSession::client_handle_recv() {
                             string login_info = mass.get<string>();
                             stringstream ss(login_info);
                             string username, password;
-                            if (ss >> username >> password) {
-                                if (username.empty() || password.empty()) {
-                                    return_json["Mass"] = "错误: 用户名或密码不能为空。";
-                                }
-                                else {
-                                    cout << "处理 Login: 用户=" << username << ", 密码=***" << endl;
-                                    if (sql_interface.check_login(username, password)) {
-                                        return_json["Status"] = "Success";
-                                        return_json["Mass"] = "登录成功。";
-                                        this->user_name = username; // 保存用户名
-                                        this->is_logged_in = true; // 设置登录状态
-                                        this->current_database = username; // 登录后默认使用用户同名数据库
-                                        cout << "用户 '" << username << "' 登录，当前数据库设置为 '" << this->current_database << "'" << endl;
-                                    }
-                                    else {
-                                        return_json["Status"] = "Failure";
-                                        return_json["Mass"] = "错误: 用户名或密码错误。";
-                                    }
-                                }
+
+                            if (mass.contains("ID") && mass.contains("Password")) {
+                                username = mass["ID"];
+                                password = mass["Password"];
                             }
                             else {
-                                return_json["Mass"] = "错误: Login 的 Mass 格式应为 '用户名 密码'。";
+                                std::cerr << "mass字段不存在或格式错误\n";
+                                break;
                             }
+                            //string login_info = mass.get<string>();
+                            //stringstream ss(login_info);
+                            if (username.empty() || password.empty()) {
+                                return_json["Mass"] = u8"错误: 用户名或密码不能为空。";
+                                break;
+                            }
+                            else {
+                                cout << "处理 Login: 用户=" << username << ", 密码=***" << endl;
+                                if (sql_interface.check_login(username, password)) {
+                                    return_json["Status"] = u8"Success";
+                                    return_json["Mass"] = u8"登录成功。";
+                                    this->user_name = username; // 保存用户名
+                                    this->is_logged_in = true; // 设置登录状态
+                                    this->current_database = username; // 登录后默认使用用户同名数据库
+                                    cout << "用户 '" << username << "' 登录，当前数据库设置为 '" << this->current_database << "'" << endl;
+                                }
+                                else {
+                                    return_json["Status"] = u8"Failure";
+                                    return_json["Mass"] = u8"错误: 用户名或密码错误。";
+                                }
+                            }
+                            
                             break;
                         } // 结束 Login
 
                         case RecvStatusType::Order: { // 处理 SQL 命令
                             if (!is_logged_in) { // 要求必须先登录才能执行 SQL
-                                return_json["Status"] = "Failure";
-                                return_json["Mass"] = "错误: 请先登录再执行 SQL 命令。";
+                                return_json["Status"] = u8"Failure";
+                                return_json["Mass"] = u8"错误: 请先登录再执行 SQL 命令。";
                                 break;
                             }
                             if (!mass.is_string()) {
-                                return_json["Mass"] = "错误: Order 的 Mass 必须是 SQL 语句字符串。"; break;
+                                return_json["Mass"] = u8"错误: Order 的 Mass 必须是 SQL 语句字符串。"; 
+                                break;
                             }
                             string sql_statement = mass.get<string>();
                             if (sql_statement.empty()) {
-                                return_json["Mass"] = "错误: SQL 语句不能为空。"; break;
+                                return_json["Mass"] = u8"错误: SQL 语句不能为空。";
+                                break;
                             }
 
                             cout << "处理 Order (SQL): " << sql_statement << ", 当前数据库: " << this->current_database << endl;
@@ -174,9 +185,10 @@ void ClientSession::client_handle_recv() {
                             string result_message;
                             SelectResult select_result;
                             // 调用 SQLInterface 处理命令
+
                             bool cmd_success = sql_interface.process_sql_command(sql_statement, this->current_database, result_message, select_result);
 
-                            return_json["Status"] = cmd_success ? "Success" : "Failure";
+                            return_json["Status"] = cmd_success ? u8"Success" : u8"Failure";
 
                             // --- 处理返回结果 ---
                             if (select_result.success && !select_result.header.empty()) { // 如果是成功的 SELECT 查询
@@ -197,21 +209,21 @@ void ClientSession::client_handle_recv() {
                         case RecvStatusType::Unknown:
                         default:
                             cerr << "错误: 未知的命令类型 '" << type_str << "'" << endl;
-                            return_json["Mass"] = "错误: 不支持的命令类型。";
+                            return_json["Mass"] = u8"错误: 不支持的命令类型。";
                             break;
                         } // 结束 switch(cmd)
 
                     }
                     catch (const json::parse_error& e) {
                         cerr << "错误: JSON 解析失败: " << e.what() << " 对于字符串: " << json_str << endl;
-                        return_json["Type"] = "Error";
-                        return_json["Mass"] = "错误: 请求的 JSON 格式无效。";
+                        return_json["Type"] = u8"Error";
+                        return_json["Mass"] = u8"错误: 请求的 JSON 格式无效。";
                         // 不清空缓冲区，因为可能只是部分 JSON 错误
                     }
                     catch (const std::exception& e) {
                         cerr << "错误: 处理命令时发生异常: " << e.what() << endl;
-                        return_json["Type"] = "Error";
-                        return_json["Mass"] = "错误: 服务器内部错误。";
+                        return_json["Type"] = u8"Error";
+                        return_json["Mass"] = u8"错误: 服务器内部错误。";
                     }
 
                     // 发送响应给客户端
@@ -255,9 +267,38 @@ void ClientSession::enqueue_message(const std::string& message) {
     }
     send_cv.notify_one(); // 唤醒发送线程
 }
+std::string gbk_to_utf8(const std::string& gbk) {
+    int wlen = MultiByteToWideChar(CP_ACP, 0, gbk.c_str(), -1, nullptr, 0);
+    std::wstring wstr(wlen, L'\0');
+    MultiByteToWideChar(CP_ACP, 0, gbk.c_str(), -1, &wstr[0], wlen);
 
-bool ClientSession::send_massage(const json& data){
+    int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string utf8(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &utf8[0], len, nullptr, nullptr);
+
+    // 去掉末尾的 '\0'
+    utf8.pop_back();
+    return utf8;
+}
+
+void convert_json_strings_to_utf8(nlohmann::json& j) {
+    if (j.is_object()) {
+        for (auto& [key, value] : j.items()) {
+            convert_json_strings_to_utf8(value);
+        }
+    }
+    else if (j.is_array()) {
+        for (auto& item : j) {
+            convert_json_strings_to_utf8(item);
+        }
+    }
+    else if (j.is_string()) {
+        j = gbk_to_utf8(j.get<std::string>());
+    }
+}
+bool ClientSession::send_massage(json& data){
     try {
+        convert_json_strings_to_utf8(data);
         // 序列化JSON并加入发送队列
         std::string json_str = data.dump();
         enqueue_message(json_str);
@@ -313,7 +354,7 @@ ClientSession::RecvStatusType ClientSession::getRecvStatusType(const std::string
     static const std::unordered_map<std::string, RecvStatusType> typeMap = {
         {"Login", RecvStatusType::Login},
         {"Order", RecvStatusType::Order},
-		{"Register", RecvStatusType::REGISTER}, 
+		//{"Register", RecvStatusType::REGISTER}, 
         {"Unknown", RecvStatusType::Unknown}
     };
 

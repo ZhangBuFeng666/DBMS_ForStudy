@@ -29,8 +29,9 @@ inline std::string trim(const std::string& str) {
 struct SQLCommand {
     // 基本命令类型枚举
     enum CommandType {
-        INSERT, CREATE, DROP, UPDATE, ALTER, DELETE_NEW,
-        SELECT, // <-- 新增 SELECT 类型
+        CREATE, ALTER, DROP,
+        INSERT, UPDATE, DELETE_NEW,
+        SELECT,
         UNKNOWN
     } type = UNKNOWN; // 操作类型, 默认为未知
 
@@ -52,6 +53,10 @@ struct SQLCommand {
     bool hasWhere = false;          // 标记是否有 WHERE 子句
     std::string whereClauseStr;     // 存储原始 WHERE 子句字符串 (用于解析)
     std::string whereColumn;        // WHERE 列名 (用于 = 和 IN)
+    std::string whereOperator; //5.2-------------------------------
+    bool useIsNullClause; // 新增：是否是 IS NULL 子句
+    bool isNot;          // 新增：对于 IS NULL 子句，是否是 IS NOT NULL
+    //5.2------------------------------
     std::string whereValue;         // WHERE = 的比较值
     bool useInClause = false;       // 标记 WHERE 子句是否使用 IN
     std::vector<std::string> inValues; // WHERE IN (...) 的值列表
@@ -59,11 +64,11 @@ struct SQLCommand {
     // --- ALTER 特定字段 ---
     enum AlterAction { // ALTER TABLE 操作的具体类型
         RENAME_TABLE, ADD_COLUMN, DROP_COLUMN, MODIFY_COLUMN, RENAME_COLUMN, INVALID_ALTER
-    } alterAction = INVALID_ALTER; // ALTER 操作类型, 默认为无效
-    std::string newTableName;     // 用于 RENAME TABLE
-    std::string columnName;       // 用于 ADD, DROP, MODIFY, RENAME (旧列名)
-    std::string columnDefinition; // 用于 ADD (如 "age INT"), MODIFY (新类型定义)
-    std::string newColumnName;    // 用于 RENAME COLUMN (新列名)
+    } alterAction = INVALID_ALTER;  // ALTER 操作类型, 默认为无效
+    std::string newTableName;       // 用于 RENAME TABLE
+    std::string columnName;         // 用于 ADD, DROP, MODIFY, RENAME (旧列名)
+    std::string columnDefinition;   // 用于 ADD (如 "age INT"), MODIFY (新类型定义)
+    std::string newColumnName;      // 用于 RENAME COLUMN (新列名)
 
     // --- SELECT 特定字段 ---
     std::vector<std::string> selectColumns; // 要选择的列名列表 ("*" 表示所有列)
