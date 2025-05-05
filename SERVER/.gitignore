@@ -51,8 +51,7 @@ out/
 .vs/
 build/
 x64/
-docs/
-Doxyfile
+
 *.ib_pdb_index
 *.idb
 *.ilk
@@ -84,3 +83,9 @@ Doxyfile
 .rcc/
 .uic/
 /build*/
+
+#self defination
+
+docs/
+logs/
+Doxyfile

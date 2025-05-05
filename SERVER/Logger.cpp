@@ -56,7 +56,7 @@ namespace logs {
             log_file.close();
         }
         else {
-            std::cerr << "Error opening log file: " << full_path << std::endl;
+            std::cerr << "错误：未能打开日志文件夹： " << full_path << std::endl;
         }
     }
 }
