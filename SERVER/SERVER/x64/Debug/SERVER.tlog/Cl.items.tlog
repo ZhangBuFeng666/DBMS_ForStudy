@@ -1,6 +1,6 @@
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\BPlusTree.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\BPlusTree.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\BufferManager.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\BufferManager.obj
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\ChangeLog.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\ChangeLog.obj
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\Logger.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\Logger.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\Client.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\Client.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\DiffPlat.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\DiffPlat.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\DiffPlat.h;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\DiffPlat.obj
@@ -8,7 +8,6 @@ F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\FileManager.cpp;F:\
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\Foreign.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\Foreign.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\Identity.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\Identity.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\LockManager.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\LockManager.obj
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\Logs.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\Logs.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\main.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\main.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SQLInterface.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\SQLInterface.obj
 F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SQLParser.cpp;F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\SERVER\x64\Debug\SQLParser.obj

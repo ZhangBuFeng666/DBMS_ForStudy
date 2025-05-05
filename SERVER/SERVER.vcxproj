@@ -140,7 +140,6 @@
     <ClCompile Include="Foreign.cpp" />
     <ClCompile Include="Identity.cpp" />
     <ClCompile Include="LockManager.cpp" />
-    <ClCompile Include="Logs.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="SQLInterface.cpp" />
     <ClCompile Include="SQLParser.cpp" />
@@ -170,6 +169,10 @@
     <ClInclude Include="Storage.h" />
     <ClInclude Include="ThreadPool.h" />
     <ClInclude Include="Tools.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ClassDiagram.cd" />
+    <None Include="ClassDiagram1.cd" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

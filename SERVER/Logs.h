@@ -2,7 +2,7 @@
 
 #ifndef LOGS_H
 #define LOGS_H
-
+#include<string>
 namespace logs {
 	class Logger {
 	public:
