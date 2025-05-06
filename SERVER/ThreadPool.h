@@ -21,5 +21,5 @@ private:
     std::condition_variable condition;
     bool stop;
 
-    void multi_work_hread();
+    void multiWorkThread();
 };
