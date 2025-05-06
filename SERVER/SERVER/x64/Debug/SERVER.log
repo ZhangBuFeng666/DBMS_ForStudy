@@ -1,2 +1,5 @@
-﻿  Client.cpp
+﻿  BPlusTree.cpp
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\BPlusTree.cpp(310,18): warning C4267: “初始化”: 从“size_t”转换到“uint32_t”，可能丢失数据
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\BPlusTree.cpp(329,27): warning C4267: “初始化”: 从“size_t”转换到“uint32_t”，可能丢失数据
+F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\BPlusTree.cpp(471,40): warning C4244: “=”: 从“std::streamoff”转换到“long”，可能丢失数据
   SERVER.vcxproj -> F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\x64\Debug\SERVER.exe
