@@ -25,13 +25,13 @@
     </TypeIdentifier>
   </Class>
   <Class Name="tools::Timer">
-    <Position X="7.25" Y="3.75" Width="1.5" />
+    <Position X="5" Y="2.25" Width="1.5" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAA=</HashCode>
       <FileName>Tools.h</FileName>
     </TypeIdentifier>
   </Class>
-  <Class Name="logs::Logger" Collapsed="true">
+  <Class Name="logs::Logger">
     <Position X="5" Y="0.75" Width="1.5" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
@@ -87,29 +87,29 @@
       <FileName>Client.h</FileName>
     </TypeIdentifier>
   </Class>
-  <Class Name="ThreadPool">
+  <Class Name="ThreadPool" Collapsed="true">
     <Position X="9.25" Y="2" Width="1.5" />
     <TypeIdentifier>
-      <HashCode>AAAAAICCAAAAAAABAAAAAAAAAAAgACgAAABAAAAABAA=</HashCode>
+      <HashCode>AAAAAICCAAAAAAABAAAQAAAAAAAgACgAAABAAAAAAAA=</HashCode>
       <FileName>ThreadPool.h</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="FileManager" Collapsed="true">
-    <Position X="14.25" Y="0.5" Width="1.5" />
+    <Position X="14.25" Y="1.75" Width="1.5" />
     <TypeIdentifier>
       <HashCode>AAAAAQAAKAAAIAAAAAAAAAAAAACAAEAAAAAgAAIEAAA=</HashCode>
       <FileName>Storage.h</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="SQLInterface" Collapsed="true">
-    <Position X="14.25" Y="2.5" Width="1.5" />
+    <Position X="11.75" Y="0.5" Width="1.5" />
     <TypeIdentifier>
       <HashCode>AAAAAIgAyAgIAAQBAACCAgEAAICAAAAAgEAACAIQABE=</HashCode>
       <FileName>SQLInterface.h</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="SQLParser" Collapsed="true">
-    <Position X="14.25" Y="1.5" Width="1.5" />
+    <Position X="14.25" Y="0.75" Width="1.5" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAEAACAAIAAAAAAAAAAAAJAAAAAAAAAAMAA=</HashCode>
       <FileName>SQLParser.h</FileName>
@@ -123,14 +123,14 @@
     </TypeIdentifier>
   </Struct>
   <Struct Name="SelectResult" Collapsed="true">
-    <Position X="14.25" Y="4" Width="1.5" />
+    <Position X="14.25" Y="3.75" Width="1.5" />
     <TypeIdentifier>
       <HashCode>AAAAAAUAAAAAAAAAAAAAAAAAAAAAAAIAAAAQAAAAAAA=</HashCode>
       <FileName>SQLInterface.h</FileName>
     </TypeIdentifier>
   </Struct>
   <Struct Name="SQLCommand" Collapsed="true">
-    <Position X="14.25" Y="3.25" Width="1.5" />
+    <Position X="14.25" Y="2.75" Width="1.5" />
     <TypeIdentifier>
       <HashCode>AAYAAAAJFAQAIAAIAAAAgABAAAApCCiBAABUAABAEAA=</HashCode>
       <FileName>SQLParser.h</FileName>
