@@ -1,5 +1,25 @@
-﻿  BPlusTree.cpp
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\BPlusTree.cpp(310,18): warning C4267: “初始化”: 从“size_t”转换到“uint32_t”，可能丢失数据
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\BPlusTree.cpp(329,27): warning C4267: “初始化”: 从“size_t”转换到“uint32_t”，可能丢失数据
-F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\BPlusTree.cpp(471,40): warning C4244: “=”: 从“std::streamoff”转换到“long”，可能丢失数据
-  SERVER.vcxproj -> F:\DBexperiment\training\engineerings\DBMS\DBMS_demo1\SERVER\x64\Debug\SERVER.exe
+﻿  SQLInterface.cpp
+D:\repo\xingjian\SERVER\SQLInterface.cpp(587,39): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(715,38): warning C4267: “参数”: 从“size_t”转换到“const int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(715,63): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(744,38): warning C4267: “参数”: 从“size_t”转换到“const int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(744,64): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(744,98): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(752,36): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(759,78): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(909,36): warning C4267: “=”: 从“size_t”转换到“int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(947,29): warning C4267: “=”: 从“size_t”转换到“int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1040,61): warning C4267: “参数”: 从“size_t”转换到“_Ty”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1040,61): warning C4267:         with
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1040,61): warning C4267:         [
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1040,61): warning C4267:             _Ty=int
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1040,61): warning C4267:         ]
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1086,42): warning C4267: “参数”: 从“size_t”转换到“const int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1087,40): warning C4267: “参数”: 从“size_t”转换到“const int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1087,92): warning C4267: “参数”: 从“size_t”转换到“const int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1098,47): warning C4267: “参数”: 从“size_t”转换到“const int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1099,48): warning C4267: “参数”: 从“size_t”转换到“const int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1110,81): warning C4267: “参数”: 从“size_t”转换到“const int”，可能丢失数据
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1416,17): warning C4834: 放弃具有 [[nodiscard]] 属性的函数的返回值
+D:\repo\xingjian\SERVER\SQLInterface.cpp(1438,17): warning C4834: 放弃具有 [[nodiscard]] 属性的函数的返回值
+  SERVER.vcxproj -> D:\repo\xingjian\SERVER\x64\Debug\SERVER.exe

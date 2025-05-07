@@ -23,7 +23,12 @@ inline std::string trim(const std::string& str) {
     return std::string(first, last);
 }
 
-
+// 新增结构体：存储单列的约束标志
+struct ColumnConstraintInfo {
+    bool isPrimaryKey = false;
+    bool isNotNull = false;
+    bool isUnique = false;
+};
 
 // 定义 SQL 命令结构体
 struct SQLCommand {
@@ -45,6 +50,9 @@ struct SQLCommand {
     // --- CREATE 特定字段 ---
     std::vector<std::pair<std::string, std::string>> fieldDefinitionsWithType; // 字段定义列表 {字段名, 字段类型}
     std::map<std::string, int> constraints; // 约束条件映射 (约束类型 -> 字段索引)
+    std::vector<ColumnConstraintInfo> columnConstraintsInfo;  // 新增：存储每列的约束标志
+
+
 
     // --- UPDATE 特定字段 ---
     std::vector<std::pair<std::string, std::string>> setClauses; // SET 子句列表 {列名, 新值}
