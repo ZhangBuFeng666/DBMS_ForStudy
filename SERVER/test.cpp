@@ -134,7 +134,7 @@ bool process_sql(const string& sql,
     try {
         switch (cmd.type) {
             // --- (Cases for CREATE, DROP, INSERT, UPDATE, DELETE, ALTER 保持不变) ---
-        case SQLCommand::CREATE: {
+        case SQLCommand::CREATE_USER: {
             if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) { cerr << "错误: 无效的 CREATE TABLE 语句 (缺少表名或字段定义)。" << endl; success = false; }
             else { cout << "尝试在数据库 '" << cmd.dbName << "' 中创建表 '" << cmd.tableName << "'" << endl; /* ... (打印字段和约束) ... */ success = db.create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); if (success) { cout << "成功: 表 '" << cmd.tableName << "' 已创建。" << endl; print_metadata(cmd.dbName, cmd.tableName, db); } else { cerr << "失败: 无法创建表 '" << cmd.tableName << "' (可能已存在或发生错误)。" << endl; } }
             break;

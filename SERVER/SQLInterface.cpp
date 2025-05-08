@@ -22,7 +22,7 @@ namespace fs = std::filesystem; // 文件系统命名空间别名
 namespace {
 
     bool iequals(const string& a, const string& b) {
-        return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+        return equal(a.begin(), a.end(), b.begin(), b.end(),
             [](char a, char b) { return tolower(a) == tolower(b); });
     }
     //5.2_________________________________________
@@ -208,9 +208,23 @@ bool SQLInterface::process_sql_command(const std::string& sql, const std::string
     bool success = false; // 操作是否成功
 
     switch (cmd.type) {
-    case SQLCommand::CREATE:
-        if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) { result_message = "错误: 无效的 CREATE TABLE 语句。"; success = false; }
-        else { success = create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); result_message = success ? "表 '" + cmd.tableName + "' 创建成功。" : "错误: 创建表 '" + cmd.tableName + "' 失败。"; }
+    case SQLCommand::CREATE_TABLE:
+        if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) { 
+            result_message = "错误: 无效的 CREATE TABLE 语句。"; success = false; 
+             }
+        else {
+            success = create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints);
+            result_message = success ? "表 '" + cmd.tableName + "' 创建成功。" : "错误: 创建表 '" + cmd.tableName + "' 失败。";
+        }
+        break;
+    case SQLCommand::CREATE_USER:
+        if (!cmd.userID.empty() && !cmd.userPassword.empty()) {
+            success = create_user(cmd.userID, cmd.userPassword, cmd.right);
+            result_message = success ? "用户 '" + cmd.userID + "' 创建成功。" : "错误: 创建表 '" + cmd.userID + "' 失败。";
+        }
+        else {
+            result_message = "错误: 无效的 CREATE USER 语句。"; success = false;
+        }
         break;
     case SQLCommand::DROP:
         if (cmd.tableName.empty()) { result_message = "错误: 无效的 DROP TABLE 语句。"; success = false; }
@@ -258,7 +272,7 @@ bool SQLInterface::process_sql_command(const std::string& sql, const std::string
 // === SQLInterface 类的成员函数实现 ===
 
 // --- 用户和数据库管理 (保持不变) ---
-bool SQLInterface::create_user(const string& username, const string& password, const string& privilege) { /* ... 实现 ... */
+bool SQLInterface::create_user(const string& username, const string& password, const int right) { /* ... 实现 ... */
     // 确保用户目录存在
     if (!fileManager.create_directory(METADATA_USER_ROOT)) {
         cerr << "错误: 无法创建用户元数据目录 " << METADATA_USER_ROOT << endl;
@@ -271,9 +285,13 @@ bool SQLInterface::create_user(const string& username, const string& password, c
     if (!headerFileIn.good()) {
         headerFileIn.close();
         ofstream newHeader(headerPath);
-        if (!newHeader) { cerr << "错误: 无法创建用户头文件 " << headerPath << endl; return false; }
+        if (!newHeader) { cerr << "错误: 无法创建用户头文件 " << headerPath << endl; return false; 
+        }
         newHeader << "用户名 密码 权限\n";
-        if (!newHeader.good()) { cerr << "错误: 写入用户头文件失败 " << headerPath << endl; newHeader.close(); return false; }
+        if (!newHeader.good()) {
+            cerr << "错误: 写入用户头文件失败 " << headerPath << endl;
+            newHeader.close(); return false;
+        }
         newHeader.close();
     }
     else {
@@ -295,7 +313,18 @@ bool SQLInterface::create_user(const string& username, const string& password, c
 
     ofstream outFile(dataPath, ios::app);
     if (!outFile) { cerr << "错误: 无法打开用户数据文件进行追加 " << dataPath << endl; return false; }
-    outFile << username << " " << password << " " << privilege << "\n";
+    switch (right) {
+    case 0:
+        outFile << username << " " << password << " " << "admin" << "\n";
+        break;
+    case 1:
+        outFile << username << " " << password << " " << "base" << "\n";
+        break;
+    default:
+        cerr << "错误: 授予" << username << "未知权限" << endl;
+        outFile.close();
+        return false;
+    }
     bool success = outFile.good();
     outFile.close();
     if (!success) { cerr << "错误: 写入用户数据失败 " << dataPath << endl; }

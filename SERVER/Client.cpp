@@ -197,6 +197,8 @@ void ClientSession::client_handle_recv() {
 
                             return_json["Status"] = cmd_success ? u8"Success" : u8"Failure";
 
+                            cout << result_message << endl;
+                            Logger::log(result_message);
                             // --- 处理返回结果 ---
                             if (select_result.success && !select_result.header.empty()) { // 如果是成功的 SELECT 查询
                                 // 将 SelectResult 格式化为 JSON (或字符串)

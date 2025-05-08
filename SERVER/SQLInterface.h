@@ -29,7 +29,7 @@ private:
 public:
     // --- (构造函数, 用户/数据库管理, DDL, INSERT, UPDATE, DELETE 方法保持不变) ---
     SQLInterface() {} // 默认构造函数
-    bool create_user(const std::string& username, const std::string& password, const std::string& privilege);
+    bool create_user(const std::string& username, const std::string& password, const int right);
     bool create_database(const std::string& username);
     bool create_table(const std::string& dbName, const std::string& tableName,
         const std::vector<std::pair<std::string, std::string>>& fieldsWithType,

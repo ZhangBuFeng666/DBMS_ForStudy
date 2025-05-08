@@ -29,7 +29,7 @@ inline std::string trim(const std::string& str) {
 struct SQLCommand {
     // 基本命令类型枚举
     enum CommandType {
-        CREATE, ALTER, DROP,
+        CREATE_TABLE,CREATE_USER, ALTER, DROP,
         INSERT, UPDATE, DELETE_NEW,
         SELECT,
         UNKNOWN
@@ -42,10 +42,14 @@ struct SQLCommand {
     // --- INSERT 特定字段 ---
     std::vector<std::string> values; // 插入时的字段值列表
 
-    // --- CREATE 特定字段 ---
+    // --- CREATE_TABLE 特定字段 ---
     std::vector<std::pair<std::string, std::string>> fieldDefinitionsWithType; // 字段定义列表 {字段名, 字段类型}
     std::map<std::string, int> constraints; // 约束条件映射 (约束类型 -> 字段索引)
 
+    // --- CREATE_USER 特定字段 ---
+    std::string userID = "";
+    std::string userPassword = "";
+    int right = -1;
     // --- UPDATE 特定字段 ---
     std::vector<std::pair<std::string, std::string>> setClauses; // SET 子句列表 {列名, 新值}
 
@@ -90,7 +94,8 @@ public:
 private:
     // (保持现有的私有辅助函数)
     std::vector<std::string> split_values(const std::string& input);
-    void parse_field_definitions(const std::string& fieldDefs, SQLCommand& cmd);
+    void parse_table_definitions(const std::string& tableDefs, SQLCommand& cmd);
+    void parse_user_definitions(const std::string& userDefs, SQLCommand& cmd);
     void parse_set_clause(const std::string& setClauseStr, SQLCommand& cmd);
 
     // 修改 parse_where_clause 以支持 IN 子句
