@@ -1,9 +1,7 @@
 {
   "ExpandedNodes": [
-    "",
-    "\\GUI",
-    "\\SERVER"
+    ""
   ],
-  "SelectedNode": "\\SERVER\\SERVER.sln",
+  "SelectedNode": "\\SERVER.sln",
   "PreviewInSolutionExplorer": false
 }
