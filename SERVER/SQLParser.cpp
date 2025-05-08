@@ -13,6 +13,15 @@ static bool iequals(const string& a, const string& b) {
     return std::equal(a.begin(), a.end(), b.begin(), b.end(),
         [](char a, char b) { return tolower(a) == tolower(b); });
 }
+
+// 辅助函数：检查字符串是否包含关键词（不区分大小写）
+static bool contains_keyword(const std::string& text, const std::string& keyword) {
+    std::string upperText = text;
+    std::string upperKeyword = keyword;
+    std::transform(upperText.begin(), upperText.end(), upperText.begin(), ::toupper);
+    std::transform(upperKeyword.begin(), upperKeyword.end(), upperKeyword.begin(), ::toupper);
+    return upperText.find(upperKeyword) != std::string::npos;
+}
 //修改5.2
 
 // --- 分割逗号分隔的值 (增强版，处理引号) ---
@@ -67,72 +76,196 @@ vector<string> SQLParser::split_values(const string& input) {
     return result;
 }
 
-// --- 解析 CREATE TABLE 语句中的字段定义 ---
-void SQLParser::parse_table_definitions(const string& tableDefs, SQLCommand& cmd) {
-    // 规范化空白：将多个空白替换为单个空格
-    string cleanedDefs = regex_replace(tableDefs, regex(R"(\s+)"), " ");
-    // 去除首尾空白
-    cleanedDefs = regex_replace(cleanedDefs, regex(R"(^\s+|\s+$)"), "");
-    // 规范化逗号周围的空白：确保每个逗号后有一个空格（可选，主要为了正则匹配方便）
-    cleanedDefs = regex_replace(cleanedDefs, regex(R"(\s*,\s*)"), ", ");
+//// --- 解析 CREATE TABLE 语句中的字段定义 ---
+//void SQLParser::parse_field_definitions(const string& fieldDefs, SQLCommand& cmd) {
+//    // 规范化空白：将多个空白替换为单个空格
+//    string cleanedDefs = regex_replace(fieldDefs, regex(R"(\s+)"), " ");
+//    // 去除首尾空白
+//    cleanedDefs = regex_replace(cleanedDefs, regex(R"(^\s+|\s+$)"), "");
+//    // 规范化逗号周围的空白：确保每个逗号后有一个空格（可选，主要为了正则匹配方便）
+//    cleanedDefs = regex_replace(cleanedDefs, regex(R"(\s*,\s*)"), ", ");
+//
+//    // 正则表达式，用于匹配字段定义，支持 CHAR(N) 和 PRIMARY KEY
+//    // \s*(\w+)\s+                         # 字段名 (捕获组 1)
+//    // (\w+(?:\(\s*\d+\s*\))?)             # 字段类型，如 INT, CHAR(10) (允许括号内有空格) (捕获组 2)
+//    // (?:\s+(PRIMARY\s+KEY))?             # 可选的主键约束 (非捕获组，但内部有捕获组 3)
+//    // \s*,?\s*                            # 可选的逗号和周围的空白
+//    regex fieldRegex(
+//        R"(\s*(\w+)\s+)"
+//        R"((\w+(?:\(\s*\d+\s*\))?))"
+//        R"((?:\s+(PRIMARY\s+KEY))?)"
+//        R"(\s*,?\s*)",
+//        regex::icase // 忽略大小写
+//    );
+//
+//    sregex_iterator it(cleanedDefs.begin(), cleanedDefs.end(), fieldRegex);
+//    sregex_iterator end;
+//    int fieldIndex = 0; // 当前字段的索引
+//
+//    for (; it != end; ++it) {
+//        smatch match = *it;
+//        // match[0] 是整个匹配项
+//        // match[1] 是字段名
+//        // match[2] 是字段类型
+//        // match[3] 是 "PRIMARY KEY" (如果存在)
+//        if (match.size() >= 3 && match[1].matched && match[2].matched) { // 确保捕获到名字和类型
+//            std::string fieldName = match[1].str();
+//            std::string fieldType = match[2].str();
+//            // 规范化类型字符串，例如去除 "CHAR ( 10 )" 中的空格
+//            fieldType = regex_replace(fieldType, regex(R"(\s+)"), "");
+//            cmd.fieldDefinitionsWithType.push_back({ fieldName, fieldType });
+//
+//            // 处理主键约束
+//            if (match[3].matched) {
+//                // 检查是否已定义主键
+//                if (cmd.constraints.count("primary_key")) {
+//                    // 处理错误：定义了多个主键
+//                    // 可以报错，或者像这里一样覆盖旧的并给警告
+//                    cerr << "警告: 定义了多个主键约束，将使用最后一个。" << endl;
+//                }
+//                cmd.constraints["primary_key"] = fieldIndex;
+//            }
+//            // 在此添加对其他约束（如 NOT NULL, UNIQUE）的解析...
+//
+//            fieldIndex++;
+//        }
+//        else {
+//            // 如果某段不匹配，给出警告
+//            string context = it->prefix().str(); // 获取匹配失败位置之前的内容
+//            size_t lastComma = context.rfind(',');
+//            if (lastComma != string::npos) context = context.substr(lastComma + 1);
+//            cerr << "警告: 无法解析字段定义中的片段，靠近: '" << trim(context) << "'" << endl;
+//        }
+//    }
+//    
+//}
 
-    // 正则表达式，用于匹配字段定义，支持 CHAR(N) 和 PRIMARY KEY
-    // \s*(\w+)\s+                         # 字段名 (捕获组 1)
-    // (\w+(?:\(\s*\d+\s*\))?)             # 字段类型，如 INT, CHAR(10) (允许括号内有空格) (捕获组 2)
-    // (?:\s+(PRIMARY\s+KEY))?             # 可选的主键约束 (非捕获组，但内部有捕获组 3)
-    // \s*,?\s*                            # 可选的逗号和周围的空白
-    regex tableRegex(
-        R"(\s*(\w+)\s+)"
-        R"((\w+(?:\(\s*\d+\s*\))?))"
-        R"((?:\s+(PRIMARY\s+KEY))?)"
-        R"(\s*,?\s*)",
-        regex::icase // 忽略大小写
+//// 解析字段定义的核心逻辑
+//void SQLParser::parse_field_definitions(const std::string& fieldDefs, SQLCommand& cmd) {
+//    cmd.fieldDefinitionsWithType.clear();
+//    cmd.columnConstraintsInfo.clear();
+//    cmd.constraints.erase("primary_key"); // 清除旧的主键信息
+//
+//    // 正则表达式：匹配字段名、类型和约束
+//    std::regex segment_regex(
+//        R"(\s*(\w+)\s+)"                      // 字段名（第1组）
+//        R"((\w+(?:\(\s*\d+\s*(,\s*\d+)?\s*\))?))" // 字段类型（如 INT, CHAR(10), DECIMAL(10,2)）（第2组）
+//        R"(([^,]*))"                          // 约束字符串（第3组）
+//        R"(\s*(?:,|$))",                      // 分隔符（逗号或字符串结束）
+//        std::regex::icase
+//    );
+//
+//    // 迭代匹配字段定义
+//    auto fields_begin = std::sregex_iterator(fieldDefs.begin(), fieldDefs.end(), segment_regex);
+//    auto fields_end = std::sregex_iterator();
+//    bool primaryKeyFound = false;
+//
+//    int fieldIndex = 0;
+//    for (auto i = fields_begin; i != fields_end; ++i, ++fieldIndex) {
+//        std::smatch match = *i;
+//        std::string columnName = trim(match[1].str());
+//        std::string columnType = trim(match[2].str());
+//        std::string constraintsStr = trim(match[3].str());
+//
+//        // 规范化字段类型（移除多余空格，如 "CHAR ( 10 )" -> "CHAR(10)"）
+//        columnType = std::regex_replace(columnType, std::regex(R"(\s+)"), "");
+//
+//        // 存储字段名和类型
+//        cmd.fieldDefinitionsWithType.push_back({ columnName, columnType });
+//
+//        // 解析约束条件
+//        ColumnConstraintInfo constraints;
+//        if (contains_keyword(constraintsStr, "PRIMARY KEY")) {
+//            if (primaryKeyFound) {
+//                std::cerr << "Error: Multiple PRIMARY KEY constraints." << std::endl;
+//                cmd.type = SQLCommand::UNKNOWN; // 标记为无效命令
+//                return;
+//            }
+//            constraints.isPrimaryKey = true;
+//            constraints.isNotNull = true;  // 主键隐含 NOT NULL
+//            constraints.isUnique = true;   // 主键隐含 UNIQUE
+//            cmd.constraints["primary_key"] = fieldIndex; // 记录主键索引
+//            primaryKeyFound = true;
+//        }
+//        if (contains_keyword(constraintsStr, "NOT NULL")) {
+//            constraints.isNotNull = true;
+//        }
+//        if (contains_keyword(constraintsStr, "UNIQUE")) {
+//            constraints.isUnique = true;
+//        }
+//
+//        // 存储列约束信息
+//        cmd.columnConstraintsInfo.push_back(constraints);
+//    }
+//}
+
+// 解析字段定义的核心逻辑
+void SQLParser::parse_field_definitions(const std::string& fieldDefs, SQLCommand& cmd) {
+    cmd.fieldDefinitionsWithType.clear();
+    cmd.columnConstraintsInfo.clear();
+    cmd.constraints.erase("primary_key"); // 清除旧的主键信息
+
+    // 正则表达式：匹配字段名、类型，以及该字段定义中直到下一个逗号或结束的所有剩余部分
+    std::regex segment_regex(
+        R"(\s*(\w+)\s+)"                                    // 字段名（第1组）
+        R"((\w+(?:\(\s*\d+(?:\s*,\s*\d+)?\s*\))?))"        // 字段类型（第2组）
+        R"(([^,]*))"                                        // 捕获直到下一个逗号或字符串末尾的所有内容 (第3组)
+        // 这个捕获组会包含约束关键字以及它们之间的空格
+        R"(\s*(?:,|$))",                                    // 分隔符（逗号或字符串结束）
+        std::regex::icase
     );
+    // 打印出传入的 fieldDefs
+    // std::cout << "DEBUG: Parsing fieldDefs: \"" << fieldDefs << "\"" << std::endl;
 
-    sregex_iterator it(cleanedDefs.begin(), cleanedDefs.end(), tableRegex);
-    sregex_iterator end;
-    int fieldIndex = 0; // 当前字段的索引
 
-    for (; it != end; ++it) {
-        smatch match = *it;
-        // match[0] 是整个匹配项
-        // match[1] 是字段名
-        // match[2] 是字段类型
-        // match[3] 是 "PRIMARY KEY" (如果存在)
-        if (match.size() >= 3 && match[1].matched && match[2].matched) { // 确保捕获到名字和类型
-            std::string fieldName = match[1].str();
-            std::string fieldType = match[2].str();
-            // 规范化类型字符串，例如去除 "CHAR ( 10 )" 中的空格
-            fieldType = regex_replace(fieldType, regex(R"(\s+)"), "");
-            cmd.fieldDefinitionsWithType.push_back({ fieldName, fieldType });
+    auto fields_begin = std::sregex_iterator(fieldDefs.begin(), fieldDefs.end(), segment_regex);
+    auto fields_end = std::sregex_iterator();
+    bool primaryKeyFoundInTable = false; // 用于检查整个表是否定义了多个主键
 
-            // 处理主键约束
-            if (match[3].matched) {
-                // 检查是否已定义主键
-                if (cmd.constraints.count("primary_key")) {
-                    // 处理错误：定义了多个主键
-                    // 可以报错，或者像这里一样覆盖旧的并给警告
-                    cerr << "警告: 定义了多个主键约束，将使用最后一个。" << endl;
-                }
-                cmd.constraints["primary_key"] = fieldIndex;
+    int fieldIndex = 0;
+    for (auto iter = fields_begin; iter != fields_end; ++iter) {
+        std::smatch match = *iter;
+        std::string columnName = trim(match[1].str());
+        std::string columnType = trim(match[2].str());
+        std::string potentialConstraintsStr = trim(match[3].str()); // 这是关键
+
+        // 调试打印捕获到的内容
+        // std::cout << "DEBUG: Matched segment: " << match[0].str() << std::endl;
+        // std::cout << "DEBUG:   Column Name: '" << columnName << "'" << std::endl;
+        // std::cout << "DEBUG:   Column Type: '" << columnType << "'" << std::endl;
+        // std::cout << "DEBUG:   Potential Constraints String: '" << potentialConstraintsStr << "'" << std::endl;
+
+        // 规范化字段类型
+        columnType = std::regex_replace(columnType, std::regex(R"(\s+)"), "");
+
+        cmd.fieldDefinitionsWithType.push_back({ columnName, columnType });
+
+        ColumnConstraintInfo currentColumnConstraints; // 每列的约束都重新初始化
+
+        // 现在对 potentialConstraintsStr 进行关键字搜索
+        if (contains_keyword(potentialConstraintsStr, "PRIMARY KEY")) {
+            if (primaryKeyFoundInTable) {
+                std::cerr << "Error: Multiple PRIMARY KEY constraints defined for the table." << std::endl;
+                cmd.type = SQLCommand::UNKNOWN; // 标记为无效命令
+                return; // 立即返回，不再继续解析
             }
-            // 在此添加对其他约束（如 NOT NULL, UNIQUE）的解析...
+            currentColumnConstraints.isPrimaryKey = true;
+            currentColumnConstraints.isNotNull = true;  // 主键隐含 NOT NULL
+            currentColumnConstraints.isUnique = true;   // 主键隐含 UNIQUE
+            cmd.constraints["primary_key"] = fieldIndex; // 记录主键列的索引
+            primaryKeyFoundInTable = true;
+        }
+        // 即使是主键，下面的NOT NULL和UNIQUE也会被重复设置，但结果是正确的
+        if (contains_keyword(potentialConstraintsStr, "NOT NULL")) {
+            currentColumnConstraints.isNotNull = true;
+        }
+        if (contains_keyword(potentialConstraintsStr, "UNIQUE")) {
+            currentColumnConstraints.isUnique = true;
+        }
 
-            fieldIndex++;
-        }
-        else {
-            // 如果某段不匹配，给出警告
-            string context = it->prefix().str(); // 获取匹配失败位置之前的内容
-            size_t lastComma = context.rfind(',');
-            if (lastComma != string::npos) context = context.substr(lastComma + 1);
-            cerr << "警告: 无法解析字段定义中的片段，靠近: '" << trim(context) << "'" << endl;
-        }
+        cmd.columnConstraintsInfo.push_back(currentColumnConstraints);
+        fieldIndex++;
     }
-    // 可选：检查是否有未解析的尾随字符
-    // string remaining = cleanedDefs.substr(it->suffix().first - cleanedDefs.begin());
-    // if (!trim(remaining).empty()) {
-    //     cerr << "Warning: Unparsed trailing characters in field definitions: " << remaining << endl;
-    // }
 }
 
 // 辅助函数：解析 CREATE USER 语句中用户定义的部分

@@ -6,6 +6,7 @@
 #include <regex>
 #include <filesystem> // C++17 文件系统库
 #include <iostream> // 用于调试输出
+#include "SQLParser.h"
 
 // Windows 特定的头文件和库，用于文件/目录操作 (如果你只在 Windows 上运行)
 #ifdef _WIN32
@@ -60,20 +61,25 @@ private:
     int write_to_file(const std::string& path);
 
 public:
+
     // 构造函数 (可以用来进行一些初始化检查)
     FileManager();
 
     // 创建新表所需的所有文件和目录
-    bool create_table(const std::string& dbName,
+    bool create_table(
+        const std::string& dbName,
         const std::string& tableName,
         const std::vector<std::pair<std::string, std::string>>& fieldsWithType,
-        const std::map<std::string, int>& constraints);
+        const std::map<std::string, int>& tableLevelConstraints,
+        const std::vector<ColumnConstraintInfo>& columnConstraints);
+
 
     // 删除指定数据库中的表的所有相关文件和目录
     bool delete_table(const std::string& dbName, const std::string& tableName);
 
     // 创建文件夹 (包括其所有不存在的父目录)
     bool create_directory(const std::string& path);
+
 
     // 删除文件
     bool delete_file(const std::string& path);
