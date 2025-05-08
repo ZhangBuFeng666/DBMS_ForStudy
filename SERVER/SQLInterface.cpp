@@ -273,7 +273,7 @@ bool SQLInterface::process_sql_command(const std::string& sql, const std::string
     //    if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) { result_message = "错误: 无效的 CREATE TABLE 语句。"; success = false; }
     //    else { success = create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); result_message = success ? "表 '" + cmd.tableName + "' 创建成功。" : "错误: 创建表 '" + cmd.tableName + "' 失败。"; }
     //    break;
-    case SQLCommand::CREATE: {
+    case SQLCommand::CREATE_TABLE: 
         if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) {
             cerr << "错误: 无效的 CREATE TABLE 语句 (缺少表名或字段定义)。" << endl;
             success = false;

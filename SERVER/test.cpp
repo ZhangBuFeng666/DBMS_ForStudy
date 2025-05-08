@@ -134,16 +134,13 @@ bool process_sql(const string& sql,
     try {
         switch (cmd.type) {
             // --- (Cases for CREATE, DROP, INSERT, UPDATE, DELETE, ALTER 保持不变) ---
-        case SQLCommand::CREATE_USER: {
-            if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) { cerr << "错误: 无效的 CREATE TABLE 语句 (缺少表名或字段定义)。" << endl; success = false; }
-            else { cout << "尝试在数据库 '" << cmd.dbName << "' 中创建表 '" << cmd.tableName << "'" << endl; /* ... (打印字段和约束) ... */ success = db.create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); if (success) { cout << "成功: 表 '" << cmd.tableName << "' 已创建。" << endl; print_metadata(cmd.dbName, cmd.tableName, db); } else { cerr << "失败: 无法创建表 '" << cmd.tableName << "' (可能已存在或发生错误)。" << endl; } }
-         // --- (Cases for CREATE, DROP, INSERT, UPDATE, DELETE, ALTER 保持不变) ---
-        //case SQLCommand::CREATE: {
-        //    if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) { cerr << "错误: 无效的 CREATE TABLE 语句 (缺少表名或字段定义)。" << endl; success = false; }
-        //    else { cout << "尝试在数据库 '" << cmd.dbName << "' 中创建表 '" << cmd.tableName << "'" << endl; /* ... (打印字段和约束) ... */ success = db.create_table(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); if (success) { cout << "成功: 表 '" << cmd.tableName << "' 已创建。" << endl; print_metadata(cmd.dbName, cmd.tableName, db); } else { cerr << "失败: 无法创建表 '" << cmd.tableName << "' (可能已存在或发生错误)。" << endl; } }
-        //    break;
-        //}
-        case SQLCommand::CREATE: {
+        //case SQLCommand::CREATE_USER: {
+        //    if (cmd.userID.empty() || cmd.userPassword.empty()) {
+        //        cerr << "错误: 无效的 CREATE TABLE 语句 (缺少表名或字段定义)。" << endl; success = false; }
+        //    else { cout << "尝试在数据库 '" << cmd.dbName << "' 中创建表 '" << cmd.tableName << "'" << endl;
+        //     success = db.(cmd.dbName, cmd.tableName, cmd.fieldDefinitionsWithType, cmd.constraints); if (success) { cout << "成功: 表 '" << cmd.tableName << "' 已创建。" << endl; print_metadata(cmd.dbName, cmd.tableName, db); } else { cerr << "失败: 无法创建表 '" << cmd.tableName << "' (可能已存在或发生错误)。" << endl; } }
+
+        case SQLCommand::CREATE_TABLE: {
             if (cmd.tableName.empty() || cmd.fieldDefinitionsWithType.empty()) {
                 cerr << "错误: 无效的 CREATE TABLE 语句 (缺少表名或字段定义)。" << endl;
                 success = false;
@@ -210,7 +207,7 @@ bool process_sql(const string& sql,
             break;
         }
 
-                              // --- 新增 SELECT 处理 Case ---
+        // --- 新增 SELECT 处理 Case ---
         case SQLCommand::SELECT:
             // 基本检查由解析器完成，这里直接调用执行
             if (cmd.fromTable.empty() || cmd.selectColumns.empty()) {
@@ -463,9 +460,9 @@ void run_constraint_tests() {
 }
 
 // 在你的 main 函数中调用:
-int main() {
-    // ... (你可能有的其他测试或初始化) ...
-    run_constraint_tests(); // 调用新的测试函数
-    // ... (交互式循环等) ...
-    return 0;
-}
+//int main() {
+//    // ... (你可能有的其他测试或初始化) ...
+//    run_constraint_tests(); // 调用新的测试函数
+//    // ... (交互式循环等) ...
+//    return 0;
+//}

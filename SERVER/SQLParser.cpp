@@ -77,9 +77,9 @@ vector<string> SQLParser::split_values(const string& input) {
 }
 
 //// --- 解析 CREATE TABLE 语句中的字段定义 ---
-//void SQLParser::parse_field_definitions(const string& fieldDefs, SQLCommand& cmd) {
+//void SQLParser::parse_field_definitions(const string& tableDefs, SQLCommand& cmd) {
 //    // 规范化空白：将多个空白替换为单个空格
-//    string cleanedDefs = regex_replace(fieldDefs, regex(R"(\s+)"), " ");
+//    string cleanedDefs = regex_replace(tableDefs, regex(R"(\s+)"), " ");
 //    // 去除首尾空白
 //    cleanedDefs = regex_replace(cleanedDefs, regex(R"(^\s+|\s+$)"), "");
 //    // 规范化逗号周围的空白：确保每个逗号后有一个空格（可选，主要为了正则匹配方便）
@@ -141,7 +141,7 @@ vector<string> SQLParser::split_values(const string& input) {
 //}
 
 //// 解析字段定义的核心逻辑
-//void SQLParser::parse_field_definitions(const std::string& fieldDefs, SQLCommand& cmd) {
+//void SQLParser::parse_field_definitions(const std::string& tableDefs, SQLCommand& cmd) {
 //    cmd.fieldDefinitionsWithType.clear();
 //    cmd.columnConstraintsInfo.clear();
 //    cmd.constraints.erase("primary_key"); // 清除旧的主键信息
@@ -156,7 +156,7 @@ vector<string> SQLParser::split_values(const string& input) {
 //    );
 //
 //    // 迭代匹配字段定义
-//    auto fields_begin = std::sregex_iterator(fieldDefs.begin(), fieldDefs.end(), segment_regex);
+//    auto fields_begin = std::sregex_iterator(tableDefs.begin(), tableDefs.end(), segment_regex);
 //    auto fields_end = std::sregex_iterator();
 //    bool primaryKeyFound = false;
 //
@@ -200,7 +200,7 @@ vector<string> SQLParser::split_values(const string& input) {
 //}
 
 // 解析字段定义的核心逻辑
-void SQLParser::parse_field_definitions(const std::string& fieldDefs, SQLCommand& cmd) {
+void SQLParser::parse_table_definitions(const std::string& tableDefs, SQLCommand& cmd) {
     cmd.fieldDefinitionsWithType.clear();
     cmd.columnConstraintsInfo.clear();
     cmd.constraints.erase("primary_key"); // 清除旧的主键信息
@@ -214,11 +214,11 @@ void SQLParser::parse_field_definitions(const std::string& fieldDefs, SQLCommand
         R"(\s*(?:,|$))",                                    // 分隔符（逗号或字符串结束）
         std::regex::icase
     );
-    // 打印出传入的 fieldDefs
-    // std::cout << "DEBUG: Parsing fieldDefs: \"" << fieldDefs << "\"" << std::endl;
+    // 打印出传入的 tableDefs
+    // std::cout << "DEBUG: Parsing tableDefs: \"" << tableDefs << "\"" << std::endl;
 
 
-    auto fields_begin = std::sregex_iterator(fieldDefs.begin(), fieldDefs.end(), segment_regex);
+    auto fields_begin = std::sregex_iterator(tableDefs.begin(), tableDefs.end(), segment_regex);
     auto fields_end = std::sregex_iterator();
     bool primaryKeyFoundInTable = false; // 用于检查整个表是否定义了多个主键
 
