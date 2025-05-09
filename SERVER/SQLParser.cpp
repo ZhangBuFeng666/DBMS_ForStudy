@@ -375,13 +375,13 @@ bool SQLParser::parse_where_clause(const std::string& whereClauseStrFull, SQLCom
     cmd.useIsNullClause = false;
     cmd.isNot = false;
 
-    if (whereClause.empty() || whereClause.rfind("WHERE", 0) != 0) {
-        if (!whereClause.empty()) {
-            cerr << "错误: 无效的 WHERE 子句格式 (缺少 WHERE 关键字?): " << whereClauseStrFull << endl;
-            return false;
-        }
-        return true;
-    }
+    //if (whereClause.empty() || whereClause.rfind("WHERE", 0) != 0) {
+    //    if (!whereClause.empty()) {
+    //        cerr << "错误: 无效的 WHERE 子句格式 (缺少 WHERE 关键字?): " << whereClauseStrFull << endl;
+    //        return false;
+    //    }
+    //    return true;
+    //}
 
     // 修改正则表达式支持 >, >=, <, <=
     regex whereCompRegex(R"(WHERE\s+(\w+)\s*(<>|>=|<=|=|>|<)\s*(?:'((?:[^']|'')*)'|([^; ]+))\s*;?)", regex::icase);
