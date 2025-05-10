@@ -1,0 +1,439 @@
+
+#include "SQLParser.h" // 包含 SQLParser 定义
+
+#include "SQLInterface.h"
+#include <fstream>
+#include <iostream>
+#include <filesystem> // C++17 文件系统库，用于文件/目录操作
+#include <vector>
+#include <string>
+#include <sstream>
+#include <regex>
+#include <stdexcept> // 用于抛出异常
+#include <algorithm> // 用于 std::remove, std::transform
+
+
+
+// 确保命名空间被使用
+using namespace std;
+namespace fs = std::filesystem; // 文件系统命名空间别名
+
+// === 内部辅助函数 (放在匿名命名空间中，限制作用域) ===
+namespace {
+    // --- 文件读写辅助 ---
+    vector<string> readLinesFromFile(const string& filepath) {
+        vector<string> lines;
+        ifstream file(filepath);
+        string line;
+        if (file.is_open()) {
+            while (getline(file, line)) {
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                lines.push_back(line);
+            }
+            file.close();
+        }
+        else {
+            cerr << "错误: 无法打开文件进行读取: " << filepath << endl;
+        }
+        return lines;
+    }
+
+    bool writeLinesToFile(const string& filepath, const vector<string>& lines) {
+        ofstream file(filepath);
+        if (!file.is_open()) {
+            cerr << "错误: 无法打开文件进行写入: " << filepath << endl;
+            return false;
+        }
+        for (const auto& line : lines) {
+            file << line << '\n';
+        }
+        file.close();
+        return file.good();
+    }
+
+    // --- 元数据访问辅助 ---
+    int findColumnIndex(const string& dbName, const string& tableName, const string& columnName, const string& metadata_root) {
+        string tdfPath = metadata_root + dbName + "/" + tableName + "/" + tableName + ".tdf";
+        if (!fs::exists(tdfPath)) {
+            return -1;
+        }
+        auto columns = readLinesFromFile(tdfPath);
+        for (size_t i = 0; i < columns.size(); ++i) {
+            if (trim(columns[i]) == columnName) {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
+    // --- CSV 数据行处理辅助 ---
+    vector<string> parseCsvRow(const string& row) {
+        vector<string> result;
+        string field;
+        bool in_quotes = false;
+        string current_field;
+
+        for (size_t i = 0; i < row.length(); ++i) {
+            char c = row[i];
+            if (c == '\'' && (i + 1 < row.length() && row[i + 1] == '\'')) {
+                current_field += '\''; i++;
+            }
+            else if (c == '\'') {
+                in_quotes = !in_quotes;
+            }
+            else if (c == ',' && !in_quotes) {
+                result.push_back(trim(current_field)); current_field = "";
+            }
+            else {
+                current_field += c;
+            }
+        }
+        result.push_back(trim(current_field));
+        return result;
+    }
+
+    string joinToCsvRow(const vector<string>& values) {
+        stringstream ss;
+        for (size_t i = 0; i < values.size(); ++i) {
+            string val = values[i];
+            bool needs_quoting = (val.find(',') != string::npos || val.find('\'') != string::npos || (!val.empty() && (val.front() == ' ' || val.back() == ' ')));
+            if (needs_quoting) {
+                size_t pos = val.find('\'');
+                while (pos != string::npos) { val.replace(pos, 1, "''"); pos = val.find('\'', pos + 2); }
+                ss << '\'' << val << '\'';
+            }
+            else { ss << val; }
+            if (i < values.size() - 1) { ss << ","; }
+        }
+        return ss.str();
+    }
+
+    // --- 其他辅助 ---
+    bool tableHasData(const string& tableName, const string& common_root) {
+        string trdPath = common_root + tableName + ".trd";
+        error_code ec;
+        uintmax_t size = fs::file_size(trdPath, ec);
+        if (ec) { return (ec == errc::no_such_file_or_directory) ? false : (cerr << "错误: 检查文件大小时出错 " << trdPath << ": " << ec.message() << endl, false); }
+        return size > 0;
+    }
+
+    bool parseCharLength(const string& typeStr, int& length) {
+        static const regex charRegex(R"(CHAR\s*\((\d+)\))", regex::icase);
+        smatch match;
+        if (regex_match(typeStr, match, charRegex) && match.size() == 2) {
+            try { length = stoi(match[1].str()); return true; }
+            catch (...) { cerr << "错误: CHAR 类型长度解析失败: " << typeStr << endl; }
+        }
+        length = -1; return false;
+    }
+
+} // 结束匿名命名空间
+
+
+// === SQLInterface 类的成员函数实现 ===
+
+// --- 用户和数据库管理 (保持不变) ---
+bool SQLInterface::create_user(const string& username, const string& password, const string& privilege) { /* ... 实现 ... */
+    // 确保用户目录存在
+    if (!fileManager.create_directory(METADATA_USER_ROOT)) {
+        cerr << "错误: 无法创建用户元数据目录 " << METADATA_USER_ROOT << endl;
+        return false;
+    }
+    const string headerPath = METADATA_USER_ROOT + "user_header.txt";
+    const string dataPath = METADATA_USER_ROOT + "user_data.txt";
+
+    ifstream headerFileIn(headerPath);
+    if (!headerFileIn.good()) {
+        headerFileIn.close();
+        ofstream newHeader(headerPath);
+        if (!newHeader) { cerr << "错误: 无法创建用户头文件 " << headerPath << endl; return false; }
+        newHeader << "用户名 密码 权限\n";
+        if (!newHeader.good()) { cerr << "错误: 写入用户头文件失败 " << headerPath << endl; newHeader.close(); return false; }
+        newHeader.close();
+    }
+    else {
+        headerFileIn.close();
+    }
+
+    ifstream dataFile(dataPath);
+    string line;
+    bool userExists = false;
+    if (dataFile.is_open()) {
+        while (getline(dataFile, line)) {
+            stringstream iss(line); string existingUser;
+            if (iss >> existingUser && existingUser == username) { userExists = true; break; }
+        }
+        dataFile.close();
+    }
+
+    if (userExists) { cerr << "信息: 用户 '" << username << "' 已存在。" << endl; return false; }
+
+    ofstream outFile(dataPath, ios::app);
+    if (!outFile) { cerr << "错误: 无法打开用户数据文件进行追加 " << dataPath << endl; return false; }
+    outFile << username << " " << password << " " << privilege << "\n";
+    bool success = outFile.good();
+    outFile.close();
+    if (!success) { cerr << "错误: 写入用户数据失败 " << dataPath << endl; }
+    return success;
+}
+bool SQLInterface::create_database(const string& username) { /* ... 实现 ... */
+    string dbMetaPath = METADATA_DB_ROOT + username + "/";
+    if (fs::exists(dbMetaPath)) { cerr << "信息: 用户 '" << username << "' 的数据库目录已存在。" << endl; return true; }
+    if (!fileManager.create_directory(dbMetaPath)) { cerr << "错误: 创建数据库元数据目录失败: " << dbMetaPath << endl; return false; }
+    if (!fileManager.create_directory(COMMONDATA_ROOT)) { cerr << "错误: 创建通用数据目录失败: " << COMMONDATA_ROOT << endl; return false; }
+    cout << "数据库目录 '" << dbMetaPath << "' 创建成功。" << endl; return true;
+}
+
+// --- 表结构操作 (DDL) ---
+bool SQLInterface::create_table(const std::string& dbName, const std::string& tableName,
+    const std::vector<std::pair<std::string, std::string>>& fieldsWithType,
+    const std::map<std::string, int>& constraints) {
+    return fileManager.create_table(dbName, tableName, fieldsWithType, constraints);
+}
+bool SQLInterface::drop_table(const string& dbName, const string& tableName) {
+    return fileManager.delete_table(dbName, tableName);
+}
+
+// 处理 ALTER TABLE 命令的核心逻辑
+bool SQLInterface::alter_table(const SQLCommand& cmd) {
+    if (cmd.type != SQLCommand::ALTER) { cerr << "内部错误: alter_table 函数被非 ALTER 命令调用。" << endl; return false; }
+
+    string dbMetaDir = METADATA_DB_ROOT + cmd.dbName + "/";
+    string tableMetaDir = dbMetaDir + cmd.tableName + "/";
+    string tableDataPath = COMMONDATA_ROOT + cmd.tableName + ".trd";
+    string tdfPath = tableMetaDir + cmd.tableName + ".tdf";
+    string ticPath = tableMetaDir + cmd.tableName + ".tic";
+    string tidPath = tableMetaDir + cmd.tableName + ".tid"; // 虽然不修改，检查主键时可能需要
+
+    if (!fs::exists(tableMetaDir)) { cerr << "错误: 表 '" << cmd.tableName << "' 在数据库 '" << cmd.dbName << "' 中不存在。" << endl; return false; }
+
+    switch (cmd.alterAction) {
+    case SQLCommand::RENAME_TABLE: { /* ... 实现 (保持不变) ... */
+        string newTableName = cmd.newTableName;
+        string newTableMetaDir = dbMetaDir + newTableName + "/";
+        string newTableDataPath = COMMONDATA_ROOT + newTableName + ".trd";
+        if (fs::exists(newTableMetaDir) || fs::exists(newTableDataPath)) { cerr << "错误: 无法重命名表，目标表名 '" << newTableName << "' 已存在。" << endl; return false; }
+        error_code ec_trd, ec_dir, ec_f;
+        if (fs::exists(tableDataPath)) {
+            fs::rename(tableDataPath, newTableDataPath, ec_trd);
+            if (ec_trd) { cerr << "错误: 重命名数据文件 (.trd) 失败: " << ec_trd.message() << endl; return false; }
+        }
+        fs::rename(tableMetaDir, newTableMetaDir, ec_dir);
+        if (ec_dir) {
+            cerr << "错误: 重命名元数据目录失败: " << ec_dir.message() << endl;
+            if (fs::exists(newTableDataPath)) { fs::rename(newTableDataPath, tableDataPath, ec_trd); } // 回滚 trd
+            return false;
+        }
+        string oldTdfInNewDir = newTableMetaDir + cmd.tableName + ".tdf"; string newTdfInNewDir = newTableMetaDir + newTableName + ".tdf";
+        string oldTicInNewDir = newTableMetaDir + cmd.tableName + ".tic"; string newTicInNewDir = newTableMetaDir + newTableName + ".tic";
+        string oldTidInNewDir = newTableMetaDir + cmd.tableName + ".tid"; string newTidInNewDir = newTableMetaDir + newTableName + ".tid";
+        if (fs::exists(oldTdfInNewDir)) { fs::rename(oldTdfInNewDir, newTdfInNewDir, ec_f); if (ec_f) cerr << "警告: 重命名 .tdf 文件失败: " << ec_f.message() << endl; }
+        if (fs::exists(oldTicInNewDir)) { fs::rename(oldTicInNewDir, newTicInNewDir, ec_f); if (ec_f) cerr << "警告: 重命名 .tic 文件失败: " << ec_f.message() << endl; }
+        if (fs::exists(oldTidInNewDir)) { fs::rename(oldTidInNewDir, newTidInNewDir, ec_f); if (ec_f) cerr << "警告: 重命名 .tid 文件失败: " << ec_f.message() << endl; }
+        cout << "表 '" << cmd.tableName << "' 已成功重命名为 '" << newTableName << "'。" << endl; return true;
+    }
+
+    case SQLCommand::ADD_COLUMN: { /* ... 实现 (保持不变) ... */
+        string colName, colType; stringstream ss_def(cmd.columnDefinition);
+        if (!(ss_def >> colName >> colType)) { cerr << "错误: ADD COLUMN 的列定义格式无效: '" << cmd.columnDefinition << "'" << endl; return false; }
+        colType = regex_replace(colType, regex(R"(\s+)"), "");
+        if (!validateFieldType(colType)) { cerr << "错误: 指定的字段类型无效: " << colType << endl; return false; }
+        if (findColumnIndex(cmd.dbName, cmd.tableName, colName, METADATA_DB_ROOT) != -1) { cerr << "错误: 列 '" << colName << "' 已存在于表 '" << cmd.tableName << "'。" << endl; return false; }
+        ofstream tdfFile(tdfPath, ios::app); ofstream ticFile(ticPath, ios::app);
+        if (!tdfFile.is_open() || !ticFile.is_open()) { cerr << "错误: 无法打开 .tdf 或 .tic 文件进行追加。" << endl; if (tdfFile.is_open()) tdfFile.close(); if (ticFile.is_open()) ticFile.close(); return false; }
+        tdfFile << colName << '\n'; ticFile << colType << '\n'; tdfFile.close(); ticFile.close();
+        if (!tdfFile.good() || !ticFile.good()) { cerr << "错误: 写入 .tdf 或 .tic 文件时发生错误。" << endl; return false; } // 回滚复杂
+        if (fs::exists(tableDataPath) && tableHasData(cmd.tableName, COMMONDATA_ROOT)) {
+            string tempTrdPath = tableDataPath + ".tmp"; vector<string> lines = readLinesFromFile(tableDataPath); vector<string> newLines; newLines.reserve(lines.size());
+            string defaultValueStr;
+            if (colType == "INT") defaultValueStr = "0"; else if (colType == "BOOL") defaultValueStr = "false"; else if (colType == "DATE") defaultValueStr = "'1970-01-01'"; else if (colType.rfind("CHAR", 0) == 0) defaultValueStr = "''"; else defaultValueStr = "''";
+            for (const string& line : lines) { if (line.empty()) continue; vector<string> values = parseCsvRow(line); values.push_back(defaultValueStr); newLines.push_back(joinToCsvRow(values)); }
+            if (!writeLinesToFile(tempTrdPath, newLines)) { cerr << "错误: 写入数据到临时文件失败 (" << tempTrdPath << ")" << endl; fs::remove(tempTrdPath); return false; } // 回滚复杂
+            error_code ec; fs::remove(tableDataPath, ec); if (ec && ec != errc::no_such_file_or_directory) { cerr << "错误: 删除原始数据文件失败: " << ec.message() << endl; fs::remove(tempTrdPath); return false; } // 回滚复杂
+            fs::rename(tempTrdPath, tableDataPath, ec); if (ec) { cerr << "错误: 重命名临时数据文件失败: " << ec.message() << endl; return false; } // 回滚复杂
+        }
+        else { ofstream touchTrd(tableDataPath); touchTrd.close(); }
+        cout << "列 '" << colName << "' 已成功添加到表 '" << cmd.tableName << "'。" << endl; return true;
+    }
+
+                               // --- 修改后的 DROP_COLUMN ---
+    case SQLCommand::DROP_COLUMN: {
+        string colToDrop = cmd.columnName;
+
+        // 1. 查找要删除列的索引
+        int colIndex = findColumnIndex(cmd.dbName, cmd.tableName, colToDrop, METADATA_DB_ROOT);
+        if (colIndex == -1) {
+            cerr << "错误: 列 '" << colToDrop << "' 在表 '" << cmd.tableName << "' 中不存在。" << endl;
+            return false;
+        }
+
+        // 2. 检查是否为主键列
+        // string tidPath = tableMetaDir + cmd.tableName + ".tid"; // tidPath 已在 switch 外定义
+        if (fs::exists(tidPath)) {
+            vector<string> tidLines = readLinesFromFile(tidPath);
+            for (const string& line : tidLines) {
+                stringstream ss_tid(line);
+                string constraintType;
+                int constraintIndex;
+                if (ss_tid >> constraintType >> constraintIndex) {
+                    if ((constraintType == "primary_key" || constraintType == "PRIMARY_KEY") && constraintIndex == colIndex) {
+                        cerr << "错误: 无法删除列 '" << colToDrop << "'，因为它是主键。" << endl;
+                        return false; // 阻止删除主键列
+                    }
+                }
+            }
+        } // 结束主键检查
+
+        // 3. 修改元数据文件 (.tdf, .tic) - 不修改 .tid
+        vector<string> tdfLines = readLinesFromFile(tdfPath);
+        vector<string> ticLines = readLinesFromFile(ticPath);
+
+        if (colIndex >= tdfLines.size() || colIndex >= ticLines.size()) {
+            cerr << "错误: 元数据文件 (.tdf/.tic) 与列索引不一致。" << endl; return false;
+        }
+
+        tdfLines.erase(tdfLines.begin() + colIndex);
+        ticLines.erase(ticLines.begin() + colIndex);
+
+        if (!writeLinesToFile(tdfPath, tdfLines) || !writeLinesToFile(ticPath, ticLines)) {
+            cerr << "错误: 写入更新后的元数据文件 (.tdf/.tic) 失败。" << endl; return false; // 回滚复杂
+        }
+        cout << "调试: .tdf 和 .tic 文件更新成功 (删除列)。" << endl;
+
+        // 4. 修改数据文件 (.trd)
+        if (fs::exists(tableDataPath) && tableHasData(cmd.tableName, COMMONDATA_ROOT)) {
+            string tempTrdPath = tableDataPath + ".tmp";
+            vector<string> lines = readLinesFromFile(tableDataPath);
+            vector<string> newLines; newLines.reserve(lines.size());
+            int expectedColsBeforeDrop = tdfLines.size() + 1; // 列数是删除 *后* 的元数据列数 + 1
+
+            int lineNum = 0;
+            for (const string& line : lines) {
+                lineNum++; if (line.empty()) continue;
+                vector<string> values = parseCsvRow(line);
+
+                if (values.size() != expectedColsBeforeDrop) { // 检查列数是否为删除前的列数
+                    cerr << "警告 (行 " << lineNum << "): 行数据列数 (" << values.size() << ") 与预期 (" << expectedColsBeforeDrop << ") 不符，跳过处理: " << line << endl;
+                    continue;
+                }
+
+                if (colIndex < values.size()) { // 确保索引有效
+                    values.erase(values.begin() + colIndex); // 删除值
+                    newLines.push_back(joinToCsvRow(values)); // 重组行
+                }
+                else {
+                    cerr << "警告 (行 " << lineNum << "): 列索引 " << colIndex << " 超出范围 (大小 " << values.size() << ")，保留原始行: " << line << endl;
+                    newLines.push_back(line); // 保留有问题的数据？或跳过？
+                }
+            }
+
+            if (!writeLinesToFile(tempTrdPath, newLines)) { cerr << "错误: 写入更新后的数据到临时文件失败。" << endl; fs::remove(tempTrdPath); return false; } // 回滚复杂
+            error_code ec;
+            fs::remove(tableDataPath, ec); if (ec && ec != errc::no_such_file_or_directory) { cerr << "错误: 删除旧数据文件失败: " << ec.message() << endl; fs::remove(tempTrdPath); return false; }
+            fs::rename(tempTrdPath, tableDataPath, ec); if (ec) { cerr << "错误: 重命名临时数据文件失败: " << ec.message() << endl; return false; }
+            cout << "调试: 数据文件 .trd 更新成功 (删除列)。" << endl;
+        }
+        else { cout << "调试: 数据文件不存在或为空，无需修改数据。" << endl; }
+
+        cout << "列 '" << colToDrop << "' 已成功从表 '" << cmd.tableName << "' 中删除。" << endl;
+        return true;
+    } // 结束简化的 DROP_COLUMN
+
+    case SQLCommand::MODIFY_COLUMN: { /* ... 实现 (保持不变) ... */
+        string colToModify = cmd.columnName; string newType = cmd.columnDefinition;
+        int colIndex = findColumnIndex(cmd.dbName, cmd.tableName, colToModify, METADATA_DB_ROOT);
+        if (colIndex == -1) { cerr << "错误: 要修改的列 '" << colToModify << "' 不存在。" << endl; return false; }
+        if (!validateFieldType(newType)) { cerr << "错误: 指定的无效新字段类型: " << newType << endl; return false; }
+        vector<string> ticLines = readLinesFromFile(ticPath);
+        if (colIndex >= ticLines.size()) { cerr << "错误: 列索引超出 .tic 文件范围。" << endl; return false; }
+        string oldType = ticLines[colIndex];
+        if (tableHasData(cmd.tableName, COMMONDATA_ROOT)) {
+            int oldLen = -1, newLen = -1; bool oldIsChar = parseCharLength(oldType, oldLen); bool newIsChar = parseCharLength(newType, newLen);
+            if (!(oldIsChar && newIsChar && newLen > oldLen)) {
+                cerr << "错误: 无法修改列 '" << colToModify << "' 的类型从 '" << oldType << "' 到 '" << newType << "'，因为表中有数据。" << "在非空表上，只允许增加 CHAR 类型的长度。" << endl; return false;
+            } cout << "注意: 正在有数据的表上修改 CHAR 长度 (" << oldType << " -> " << newType << ")。" << endl;
+        }
+        else { cout << "调试: 表为空，允许类型修改 (" << oldType << " -> " << newType << ")。" << endl; }
+        ticLines[colIndex] = newType;
+        if (!writeLinesToFile(ticPath, ticLines)) { cerr << "错误: 写入更新后的类型文件 (.tic) 失败。" << endl; return false; } // 回滚复杂
+        cout << "列 '" << colToModify << "' 的类型已成功修改为 '" << newType << "'。" << endl; return true;
+    }
+
+    case SQLCommand::RENAME_COLUMN: { /* ... 实现 (保持不变) ... */
+        string oldName = cmd.columnName; string newName = cmd.newColumnName;
+        int colIndex = findColumnIndex(cmd.dbName, cmd.tableName, oldName, METADATA_DB_ROOT);
+        if (colIndex == -1) { cerr << "错误: 要重命名的列 '" << oldName << "' 不存在。" << endl; return false; }
+        if (findColumnIndex(cmd.dbName, cmd.tableName, newName, METADATA_DB_ROOT) != -1) { cerr << "错误: 无法重命名列，目标名称 '" << newName << "' 已存在。" << endl; return false; }
+        vector<string> tdfLines = readLinesFromFile(tdfPath);
+        if (colIndex >= tdfLines.size()) { cerr << "错误: 列索引超出 .tdf 文件范围。" << endl; return false; }
+        tdfLines[colIndex] = newName;
+        if (!writeLinesToFile(tdfPath, tdfLines)) { cerr << "错误: 写入更新后的定义文件 (.tdf) 失败。" << endl; return false; } // 回滚复杂
+        cout << "列 '" << oldName << "' 已成功重命名为 '" << newName << "'。" << endl; return true;
+    }
+
+    default:
+        cerr << "错误: 不支持的 ALTER TABLE 操作类型。" << endl;
+        return false;
+    } // 结束 switch(cmd.alterAction)
+} // 结束 alter_table
+
+// --- 数据操作 (DML) (保持不变) ---
+bool SQLInterface::insert_into_table(const string& dbName, const string& tableName, const vector<string>& values) { /* ... 实现 ... */
+    string dataPath = COMMONDATA_ROOT + tableName + ".trd"; string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/"; string ticPath = metaDir + tableName + ".tic";
+    if (!fs::exists(ticPath)) { cerr << "错误: 无法找到表 '" << tableName << "' 的类型定义文件 (.tic)。" << endl; return false; }
+    vector<string> fieldTypes = parseFieldTypes(dbName, tableName); if (fieldTypes.empty()) { cerr << "错误: 未能从 .tic 文件加载字段类型。" << endl; return false; }
+    if (values.size() != fieldTypes.size()) { cerr << "错误: 插入的值数量 (" << values.size() << ") 与表定义的字段数量 (" << fieldTypes.size() << ") 不匹配。" << endl; return false; }
+    for (size_t i = 0; i < values.size(); ++i) { if (!validateValueType(fieldTypes[i], values[i])) { cerr << "错误: 第 " << (i + 1) << " 个值 '" << values[i] << "' 的类型不符合字段要求的类型 '" << fieldTypes[i] << "'。" << endl; return false; } }
+    string rowData = joinToCsvRow(values);
+    ofstream dataFile(dataPath, ios::app); if (!dataFile.is_open()) { cerr << "错误: 无法打开数据文件进行追加: " << dataPath << endl; return false; }
+    dataFile << rowData << "\n"; bool success = dataFile.good(); dataFile.close();
+    if (!success) { cerr << "错误: 写入数据到文件 " << dataPath << " 失败。" << endl; } return success;
+}
+bool SQLInterface::update_table_row(const string& dbName, const string& tableName,
+    const vector<pair<string, string>>& setClauses,
+    const string& whereColumn, const string& whereValue) { /* ... 实现 ... */
+    string dataPath = COMMONDATA_ROOT + tableName + ".trd"; string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/"; string tdfPath = metaDir + tableName + ".tdf"; string ticPath = metaDir + tableName + ".tic";
+    if (setClauses.empty()) { cerr << "错误: UPDATE 语句必须包含至少一个 SET 子句。" << endl; return false; } if (whereColumn.empty()) { cerr << "错误: UPDATE 语句当前需要一个 'WHERE 字段 = 值' 子句。" << endl; return false; } if (!fs::exists(dataPath) || !fs::exists(tdfPath) || !fs::exists(ticPath)) { cerr << "错误: 表 '" << tableName << "' 的数据或元数据文件 (.trd, .tdf, .tic) 未找到。" << endl; return false; }
+    auto columns = readLinesFromFile(tdfPath); auto types = readLinesFromFile(ticPath); if (columns.empty() || columns.size() != types.size()) { cerr << "错误: 表 '" << tableName << "' 的元数据文件 (.tdf/.tic) 不一致或为空。" << endl; return false; }
+    int whereIndex = findColumnIndex(dbName, tableName, whereColumn, METADATA_DB_ROOT); if (whereIndex == -1) { cerr << "错误: WHERE 子句中的列 '" << whereColumn << "' 在表 '" << tableName << "' 中未找到。" << endl; return false; }
+    map<int, string> setIndexToValue;
+    for (const auto& pair : setClauses) { int setIndex = findColumnIndex(dbName, tableName, pair.first, METADATA_DB_ROOT); if (setIndex == -1) { cerr << "错误: SET 子句中的列 '" << pair.first << "' 在表 '" << tableName << "' 中未找到。" << endl; return false; } if (!validateValueType(types[setIndex], pair.second)) { cerr << "错误: 为列 '" << pair.first << "' (类型 " << types[setIndex] << ") 提供的值 '" << pair.second << "' 类型无效。" << endl; return false; } setIndexToValue[setIndex] = pair.second; }
+    string tempPath = dataPath + ".tmp"; vector<string> lines = readLinesFromFile(dataPath); vector<string> newLines; newLines.reserve(lines.size()); int updatedRows = 0; int lineNum = 0;
+    for (const string& line : lines) { lineNum++; if (line.empty()) continue; vector<string> values = parseCsvRow(line); if (values.size() != columns.size()) { cerr << "警告 (行 " << lineNum << "): UPDATE 时行数据列数 (" << values.size() << ") 与表定义 (" << columns.size() << ") 不符，保留原始行: " << line << endl; newLines.push_back(line); continue; } bool match = false; if (whereIndex < values.size()) { if (values[whereIndex] == whereValue) { match = true; } } else { cerr << "警告 (行 " << lineNum << "): WHERE 列索引 " << whereIndex << " 超出范围，保留原始行。" << endl; newLines.push_back(line); continue; } if (match) { for (const auto& [index, newValue] : setIndexToValue) { if (index < values.size()) { values[index] = newValue; } } newLines.push_back(joinToCsvRow(values)); updatedRows++; } else { newLines.push_back(line); } }
+    if (!writeLinesToFile(tempPath, newLines)) { cerr << "错误: 写入更新后的数据到临时文件失败。" << endl; fs::remove(tempPath); return false; } error_code ec; fs::remove(dataPath, ec); if (ec && ec != errc::no_such_file_or_directory) { cerr << "错误: 删除旧数据文件失败: " << ec.message() << endl; fs::remove(tempPath); return false; } fs::rename(tempPath, dataPath, ec); if (ec) { cerr << "错误: 重命名临时数据文件失败: " << ec.message() << endl; return false; }
+    cout << "更新成功。共有 " << updatedRows << " 行受到影响。" << endl; return true;
+}
+bool SQLInterface::delete_table_row(const string& dbName, const string& tableName,
+    const string& whereColumn, const string& whereValue) { /* ... 实现 ... */
+    string dataPath = COMMONDATA_ROOT + tableName + ".trd"; string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/"; string tdfPath = metaDir + tableName + ".tdf";
+    if (whereColumn.empty()) { cerr << "错误: DELETE 语句当前需要一个 'WHERE 字段 = 值' 子句。" << endl; return false; } if (!fs::exists(dataPath) || !fs::exists(tdfPath)) { cerr << "错误: 表 '" << tableName << "' 的数据或元数据文件 (.trd, .tdf) 未找到。" << endl; return false; }
+    auto columns = readLinesFromFile(tdfPath); if (columns.empty()) { cerr << "错误: 无法读取表 '" << tableName << "' 的列定义 (.tdf)。" << endl; return false; }
+    int whereIndex = findColumnIndex(dbName, tableName, whereColumn, METADATA_DB_ROOT); if (whereIndex == -1) { cerr << "错误: WHERE 子句中的列 '" << whereColumn << "' 在表 '" << tableName << "' 中未找到。" << endl; return false; }
+    string tempPath = dataPath + ".tmp"; vector<string> lines = readLinesFromFile(dataPath); vector<string> newLines; newLines.reserve(lines.size()); int deletedRows = 0; int lineNum = 0;
+    for (const string& line : lines) { lineNum++; if (line.empty()) continue; vector<string> values = parseCsvRow(line); if (values.size() != columns.size()) { cerr << "警告 (行 " << lineNum << "): DELETE 时行数据列数 (" << values.size() << ") 与表定义 (" << columns.size() << ") 不符，保留该行: " << line << endl; newLines.push_back(line); continue; } bool match = false; if (whereIndex < values.size()) { if (values[whereIndex] == whereValue) { match = true; } } else { cerr << "警告 (行 " << lineNum << "): WHERE 列索引 " << whereIndex << " 超出范围，保留该行。" << endl; newLines.push_back(line); continue; } if (match) { deletedRows++; } else { newLines.push_back(line); } }
+    if (!writeLinesToFile(tempPath, newLines)) { cerr << "错误: 写入更新后的数据到临时文件失败。" << endl; fs::remove(tempPath); return false; } error_code ec; fs::remove(dataPath, ec); if (ec && ec != errc::no_such_file_or_directory) { cerr << "错误: 删除旧数据文件失败: " << ec.message() << endl; fs::remove(tempPath); return false; } fs::rename(tempPath, dataPath, ec); if (ec) { cerr << "错误: 重命名临时数据文件失败: " << ec.message() << endl; return false; }
+    cout << "删除成功。共有 " << deletedRows << " 行受到影响。" << endl; return true;
+}
+
+// --- 权限管理 (示例) (保持不变) ---
+string SQLInterface::grant_privilege_sql(const string& username, const string& privilegeType) {
+    return "GRANT " + privilegeType + " TO " + username + ";";
+}
+
+// --- 私有辅助函数实现 (保持不变) ---
+bool SQLInterface::validateFieldType(const string& typeStr) { /* ... 实现 ... */
+    static const regex typeRegex(R"(^(INT|BOOL|DATE|CHAR\(\s*[1-9]\d*\s*\))$)", regex::icase); return regex_match(typeStr, typeRegex);
+}
+vector<string> SQLInterface::parseFieldTypes(const string& dbName, const string& tableName) { /* ... 实现 ... */
+    string ticPath = METADATA_DB_ROOT + dbName + "/" + tableName + "/" + tableName + ".tic"; if (!fs::exists(ticPath)) { cerr << "错误: 类型文件不存在: " << ticPath << endl; return {}; } vector<string> types = readLinesFromFile(ticPath); vector<string> validated_types;
+    for (const string& t : types) { string trimmed_type = trim(t); if (!trimmed_type.empty()) { if (validateFieldType(trimmed_type)) { validated_types.push_back(trimmed_type); } else { cerr << "警告: 在 " << ticPath << " 中发现无效的类型定义: '" << t << "'" << endl; return {}; } } } return validated_types;
+}
+bool SQLInterface::validateValueType(const string& type, const string& value) { /* ... 实现 ... */
+    int charLen = -1; if (parseCharLength(type, charLen)) { return value.length() <= charLen; }
+    else if (type == "INT") { try { size_t p = 0; stoi(value, &p); return p == value.length(); } catch (...) { return false; } }
+    else if (type == "DATE") { static const regex dateRegex(R"(^\d{4}-\d{2}-\d{2}$)"); return regex_match(value, dateRegex); }
+    else if (type == "BOOL") { string lowerVal = value; transform(lowerVal.begin(), lowerVal.end(), lowerVal.begin(), ::tolower); return lowerVal == "true" || lowerVal == "false" || lowerVal == "1" || lowerVal == "0"; }
+    cerr << "警告: 未知的字段类型用于值校验: " << type << endl; return false;
+}
