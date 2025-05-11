@@ -490,12 +490,12 @@ bool SQLParser::parse_order_by_clause(const std::string& orderByStrFull, SQLComm
     cmd.orderByColumn = ""; // 重置状态
     cmd.sortOrder = SQLCommand::ASC; // 默认升序
 
-    if (orderByClause.empty() || orderByClause.rfind("ORDER BY", 0) != 0) { // 必须以 ORDER BY 开头 (忽略大小写)
-        if (!orderByClause.empty()) {
-            cerr << "错误: 无效的 ORDER BY 子句格式 (缺少 ORDER BY 关键字?): " << orderByStrFull << endl;
-        }
-        return false; // 格式不对或为空
-    }
+    //if (orderByClause.empty() || orderByClause.rfind("ORDER BY", 0) != 0) { // 必须以 ORDER BY 开头 (忽略大小写)
+    //    if (!orderByClause.empty()) {
+    //        cerr << "错误: 无效的 ORDER BY 子句格式 (缺少 ORDER BY 关键字?): " << orderByStrFull << endl;
+    //    }
+    //    return false; // 格式不对或为空
+    //}
 
     // 正则：ORDER BY <列名> [ASC|DESC] ; (可选)
     // ORDER\s+BY\s+      # ORDER BY

@@ -50,6 +50,14 @@ bool InternetConnector::login(const QString &id, const QString &password) {
         return false;
     }
 }
+void InternetConnector::logout() {
+    QJsonObject logoutRequest={
+        {"Type", "Logout"},
+        {"Mass", ""}
+    };
+    sendMassage(logoutRequest);
+}
+
 
 QJsonArray convertToQJsonArray(const QVector<QVector<int>> &matrix) {
     QJsonArray jsonArray;

@@ -22,22 +22,13 @@ public:
 
     // 登录验证
     bool login(const QString &id, const QString &password);
+    void logout();
 
-    // 单人游戏完成时发送结果
-    // void sendSingleGameResult(int difficulty, qint64 timeUsed);
-
-    // 请求联机对战
-    // bool sendMatchRequest(int difficulty);
-    // bool exchangeMatrices(QVector<QVector<int>> &myMatrix, QVector<QVector<int>> &opponentMatrix);
+signals:
+    void logged();
 
     // 发送用户请求的操作
     void sendOrder(const QString &qstr);
-
-    // 发送对局完成信息
-    // void sendGameOver(bool isWinner, int difficulty, qint64 timeUsed);
-
-    // 请求个人记录
-    // QVector<qint64> requestPersonalRecord();
 
     //外部用接收并显示数据
     void recvMessage();

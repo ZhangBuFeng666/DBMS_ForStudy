@@ -22,6 +22,10 @@ struct LoadedColumnConstraints {
     bool isUnique = false;
 };
 
+struct DBStructure {
+    std::vector<std::string> table;              // 查询表名
+    std::vector<std::vector<std::string>> column; // 查询列名及列属性 2*n
+};
 
 // SQL 接口类，封装数据库操作逻辑
 class SQLInterface {
@@ -56,6 +60,8 @@ public:
     // 参数: 解析后的 SELECT 命令结构体
     // 返回: 包含查询结果或错误信息的 SelectResult 结构体
     SelectResult select_from_table(const SQLCommand& command);
+
+    DBStructure get_DB_structure(const std::string& currentDbName);
 
     // --- 新增：用户登录检查方法 ---
     bool check_login(const std::string& username, const std::string& password);

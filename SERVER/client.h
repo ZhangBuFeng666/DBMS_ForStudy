@@ -77,7 +77,9 @@ private:
 
     enum class RecvStatusType {
         //REGISTER,
+        Logout,
         Login,
+        Structure,
         Order,
         Unknown
 };

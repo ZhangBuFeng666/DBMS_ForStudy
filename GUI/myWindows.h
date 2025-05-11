@@ -3,6 +3,9 @@
 
 #include <QMainWindow>
 #include <QMenuBar>
+#include <QToolBar>
+#include <QStackedWidget>
+#include <QListWidget>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -18,9 +21,23 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QWidget>
+#include <QTreeWidget>
 #include <QFile>
 #include <QFileDialog>
+#include <QCheckBox>
 #include "InternetConnector.h"
+
+class HistoryItemWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit HistoryItemWidget(const QString &text, QWidget *parent = nullptr);
+
+    QLabel *label;
+    QPushButton *closeBtn;
+
+signals:
+    void requestClose();  // 发出“请求关闭”的信号
+};
 
 class LoginWindow : public QWidget {
     Q_OBJECT
@@ -33,8 +50,9 @@ signals:
 private slots:
     void onLoginClicked() {
 
-        if(connector->login(usernameEdit->text(),passwordEdit->text()))
+        if(connector->login(usernameEdit->text(),passwordEdit->text())){
             emit loginSuccess(); // 暂时直接触发登录成功信号
+        }
         else{
             passwordLabel->setText("密码:(密码错误)");
         }
@@ -59,6 +77,11 @@ class MyMainWindow : public QMainWindow {
     Q_OBJECT
 public:
     MyMainWindow(InternetConnector *connector,QWidget *parent = nullptr);
+    void updateDBTree();
+
+
+signals:
+    void clickExit();
 
 private slots:
     //命令行模式下检测‘;’截断命令
@@ -67,14 +90,26 @@ private slots:
     //文本用
     void executeScriptOrder();
     void saveFile();
+    void textChanged(){
+        fileChanged =1;
+    }
     //命令行用
     void switchCmdMode();
     void switchScriptMode();
-    void closeTab(int index);
+    // void closeTab(int index);
+
+    //刷新历史记录（及其中条目内容）
+    void refreshHistory();
+
+    //用户手动退出主界面（跳转登录）
+    void ExitLogin();
+
+    //双击树状图节点
+        void onTreeItemDoubleClicked(QTreeWidgetItem *item);
 
 private:
 
-    bool fileChanged = false;
+    bool fileChanged = 0;
     QString curFileName;
 
     void createWindow();
@@ -85,12 +120,31 @@ private:
     Mode currentMode;
 
     // UI组件
-    QTabWidget *resultTabs;
-    QWidget *inputArea;
+    QListWidget *historyList;          // 右侧历史记录
+    QPushButton *refreshBtn;
+    QStackedWidget *resultStack;       // 显示各个查询结果
+    QMap<int, QString> commandMap;     // 保存历史记录文本（可选）
+    QWidget *inputWidget;
     QTextEdit  *cmdInput;
+    QLabel *cur_file;
     QTextEdit *scriptInput;
     QPushButton *sendBtn;
     QPushButton *saveBtn;
+
+    // 图形化相关组件
+    QTreeWidget *dbTreeView;              // 左侧树状图
+    QTableWidget *queryResultTable;      // 下部结果表格
+
+    // 图形化操作建表按钮
+    QPushButton *createTableBtn;
+    QPushButton *alterTableBtn;
+    QPushButton *dropTableBtn;
+
+    // 图形化建表操作槽函数
+    void showCreateTableDialog();
+    void showAlterTableDialog();
+    void showDropTableDialog();
+
 
     // 菜单项
     QMenu *fileMenu;
@@ -109,6 +163,10 @@ private:
 
     //网络连接类
     InternetConnector *connector;
+
+    //历史记录存储
+    QVector<QString> historyCommands;  // 存所有命令
+
 };
 
 
@@ -125,6 +183,7 @@ private slots:
 
 private:
     void hideAllWindows();
+    void showLoginWindow();
 
     LoginWindow *loginWindow;
     MyMainWindow *mainWindow;

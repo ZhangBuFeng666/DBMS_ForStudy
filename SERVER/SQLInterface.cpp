@@ -1876,3 +1876,69 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
     return result;
 }
 
+DBStructure SQLInterface::get_DB_structure(const std::string& currentDbName) {
+    DBStructure dbStruct;
+    namespace fs = std::filesystem;
+
+    // 构造数据库目录路径
+    std::string dbPath = METADATA_DB_ROOT + currentDbName + "/";
+    fs::path root(dbPath);
+
+    if (!fs::exists(root) || !fs::is_directory(root)) {
+        throw std::runtime_error("数据库目录不存在: " + dbPath);
+    }
+
+    // 遍历每个子目录（每个表名对应一个子目录）
+    for (const auto& entry : fs::directory_iterator(root)) {
+        if (!entry.is_directory()) continue;
+
+        std::string tableName = entry.path().filename().string();
+        dbStruct.table.push_back(tableName);
+
+        // 构造 .tdf 与 .tic 文件路径
+        fs::path tdfPath = entry.path() / (tableName + ".tdf");
+        fs::path ticPath = entry.path() / (tableName + ".tic");
+
+        if (!fs::exists(tdfPath) || !fs::exists(ticPath)) {
+            throw std::runtime_error("缺少 tdf 或 tic 文件: " + entry.path().string());
+        }
+
+        // 读取列名（.tdf）
+        std::vector<std::string> colNames;
+        {
+            std::ifstream in(tdfPath);
+            if (!in) throw std::runtime_error("无法打开文件: " + tdfPath.string());
+            std::string line;
+            while (std::getline(in, line)) {
+                if (!line.empty()) colNames.push_back(line);
+            }
+        }
+
+        // 读取列属性（.tic）
+        std::vector<std::string> colProps;
+        {
+            std::ifstream in(ticPath);
+            if (!in) throw std::runtime_error("无法打开文件: " + ticPath.string());
+            std::string line;
+            while (std::getline(in, line)) {
+                if (!line.empty()) colProps.push_back(line);
+            }
+        }
+
+        // 行数应一致
+        if (colNames.size() != colProps.size()) {
+            throw std::runtime_error("tdf 与 tic 行数不匹配: " + tableName);
+        }
+
+        // 构造 [列名, 属性, 列名, 属性, ...]
+        std::vector<std::string> colsAndProps;
+        colsAndProps.reserve(colNames.size() * 2);
+        for (size_t i = 0; i < colNames.size(); ++i) {
+            colsAndProps.push_back(colNames[i]);
+            colsAndProps.push_back(colProps[i]);
+        }
+        dbStruct.column.push_back(std::move(colsAndProps));
+    }
+
+    return dbStruct;
+}
