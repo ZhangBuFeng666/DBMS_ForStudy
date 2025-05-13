@@ -940,7 +940,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
 
     // 设置结果的 header (总是设置，即使表为空)
     result.header = selectedColumnsNames;
-
+    
     // 如果数据文件不存在，此时已设置好 header，可以直接返回空结果集
     if (!dataFileExists) {
         result.success = true;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include<Windows.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -9,30 +10,10 @@
 #include <unordered_map>
 #include <sstream>
 #include <functional>
+#include <mutex>
+#include <fileapi.h>
+#include <queue>
 
-// ================== 数据类型定义 ==================
-enum class IndexType { INTEGER, STRING };
-
-struct IndexKey {
-    std::string key_str;
-
-    bool operator<(const IndexKey& other) const {
-        return key_str < other.key_str;
-    }
-    bool operator>(const IndexKey& other) const {
-        return key_str > other.key_str;
-    }
-    bool operator==(const IndexKey& other) const {
-        return key_str == other.key_str;
-    }
-};
-
-std::ostream& operator<<(std::ostream& os, const IndexKey& key) {
-    os << key.key_str;
-    return os;
-}
-
-// ================== 类型辅助函数 ==================
 bool isIntegerType(const std::string& columnType) {
     std::string typeUpper = columnType;
     std::transform(typeUpper.begin(), typeUpper.end(), typeUpper.begin(), ::toupper);
@@ -49,6 +30,42 @@ bool isStringType(const std::string& columnType) {
         typeUpper.find("DATE") == 0 ||
         typeUpper.find("STRING") == 0);
 }
+
+
+// ================== 数据类型定义 ==================
+enum class IndexType { INTEGER, STRING };
+
+struct IndexKey {
+    std::string key_str;
+    std::string key_type;
+
+    bool operator<(const IndexKey& other) const {
+        if (isStringType(key_type)) {
+            return key_str < other.key_str;
+        }
+        else {
+            return std::stoi(key_str) < std::stoi(other.key_str);
+        }
+    }
+    bool operator>(const IndexKey& other) const {
+        if (isStringType(key_type)) {
+            return key_str > other.key_str;
+        }
+        else {
+            return std::stoi(key_str) > std::stoi(other.key_str);
+        }
+    }
+    bool operator==(const IndexKey& other) const {
+        return key_str == other.key_str;
+    }
+};
+
+std::ostream& operator<<(std::ostream& os, const IndexKey& key) {
+    os << key.key_str;
+    return os;
+}
+
+// ================== 类型辅助函数 ==================
 
 IndexType mapColumnType(const std::string& dbType) {
     if (isIntegerType(dbType)) return IndexType::INTEGER;
@@ -78,7 +95,11 @@ public:
     std::vector<BPlusNode*> children;
     BPlusInternalNode() : BPlusNode(false) {}
     ~BPlusInternalNode() {
-        for (auto child : children) delete child;
+        for (auto child : children) {
+            if (child != nullptr) {
+                delete child;
+            }
+        }
     }
 };
 
@@ -104,6 +125,15 @@ private:
 public:
     BPlusTree(int order = 500) : order(order), root(new BPlusLeafNode()) {}
     ~BPlusTree();
+
+    BPlusLeafNode* getLeftmostLeaf() const {
+        if (!root) return nullptr;
+        BPlusNode* node = root;
+        while (!node->isLeaf) {
+            node = static_cast<BPlusInternalNode*>(node)->children[0];
+        }
+        return static_cast<BPlusLeafNode*>(node);
+    }
     void insert(IndexKey key, long value);
     void print() const;
     std::vector<long> rangeSearch(const IndexKey& start, const IndexKey& end, const std::string& columnType) const;
@@ -112,6 +142,7 @@ public:
     bool deserialize(std::istream& in);
     bool serializeToFile(const std::string& filename) const;
     bool deserializeFromFile(const std::string& filename);
+
 };
 
 // ================== 表处理器 ==================
@@ -142,13 +173,13 @@ void create_index(const std::string& table_name, const std::string& column_name,
 std::string findIndexPath(const std::string& table, const std::string& column);
 std::string getColumnType(const std::string& table, const std::string& column);
 IndexKey createIndexKey(const std::string& table, const std::string& column, const std::string& input);
-std::vector<std::string> rangeQuery(
+std::vector<long> rangeQuery(
     const std::string& table,
     const std::string& column,
     const IndexKey& start,
     const IndexKey& end,
     const std::string& columnType);
-std::vector<std::string> rangeQueryAuto(
+std::vector<long> rangeQueryAuto(
     const std::string& table,
     const std::string& column,
     const std::string& startInput,
@@ -158,18 +189,20 @@ std::vector<std::string> rangeQueryAuto(
 
 // --- BPlusTree 实现 ---
 BPlusTree::~BPlusTree() {
-    auto destroy = [](BPlusNode* node) {
-        std::function<void(BPlusNode*)> del = [&](BPlusNode* n) {
-            if (!n) return;
-            if (!n->isLeaf) {
-                for (auto c : static_cast<BPlusInternalNode*>(n)->children)
-                    del(c);
+    if (!root) return;
+    std::queue<BPlusNode*> nodes;
+    nodes.push(root);
+    while (!nodes.empty()) {
+        BPlusNode* current = nodes.front();
+        nodes.pop();
+        if (!current->isLeaf) {
+            auto* internalNode = static_cast<BPlusInternalNode*>(current);
+            for (BPlusNode* child : internalNode->children) {
+                if (child) nodes.push(child); // 仅处理非空指针
             }
-            delete n;
-            };
-        del(node);
-        };
-    destroy(root);
+        }
+        delete current;
+    }
 }
 
 BPlusLeafNode* BPlusTree::findLeaf(IndexKey key) const {
@@ -305,22 +338,70 @@ void BPlusTree::rebuildLeafLinkedList() {
     link(root);
 }
 
-std::vector<long> BPlusTree::rangeSearch(const IndexKey& start, const IndexKey& end, const std::string& columnType) const {
-    BPlusLeafNode* leaf = findLeaf(start);
-    std::vector<long> results;
-    size_t idx = binarySearch(leaf->keys, start);
 
-    while (leaf) {
-        for (; idx < leaf->keys.size(); ++idx) {
-            const IndexKey& key = leaf->keys[idx];
-            if (key > end) break;
-            results.push_back(leaf->values[idx]);
+
+std::vector<long> BPlusTree::rangeSearch(const IndexKey& start, const IndexKey& end, const std::string& columnType) const {
+    std::vector<long> results;
+    // 情况0：start和end均为"*"，返回整棵树的所有值
+    if (start.key_str == "*" && end.key_str == "*") {
+        BPlusLeafNode* leaf = getLeftmostLeaf();
+        while (leaf) {
+            results.insert(results.end(), leaf->values.begin(), leaf->values.end());
+            leaf = leaf->next;
         }
-        leaf = leaf->next;
-        idx = 0;
+        return results;
     }
 
-    return results;
+    // 情况1：start为"*"（从头查到end）
+    else if (start.key_str == "*") {
+        BPlusLeafNode* leaf = getLeftmostLeaf();
+        if (!leaf) return results;  // 空树
+
+        size_t idx = 0;
+        while (leaf) {
+            for (; idx < leaf->keys.size(); ++idx) {
+                if (leaf->keys[idx] > end) return results;  // 超过end则终止
+                results.push_back(leaf->values[idx]);
+            }
+            leaf = leaf->next;
+            idx = 0;
+        }
+        return results;
+    }
+
+    // 情况2：end为"*"（从start查到结尾）
+    else if (end.key_str == "*") {
+        BPlusLeafNode* leaf = findLeaf(start);
+        if (!leaf) return results;  // start超出范围
+
+        size_t idx = binarySearch(leaf->keys, start);
+        while (leaf) {
+            for (; idx < leaf->keys.size(); ++idx) {
+                results.push_back(leaf->values[idx]);
+            }
+            leaf = leaf->next;
+            idx = 0;
+        }
+        return results;
+    }
+
+    // 情况3：普通范围查询（无通配符）
+    else {
+        BPlusLeafNode* leaf = findLeaf(start);
+        if (!leaf) return results;  // start超出范围
+
+        size_t idx = binarySearch(leaf->keys, start);
+        while (leaf) {
+            for (; idx < leaf->keys.size(); ++idx) {
+                if (leaf->keys[idx] > end) return results;  // 超过end则终止
+                results.push_back(leaf->values[idx]);
+            }
+            leaf = leaf->next;
+            idx = 0;
+        }
+
+        return results;
+    }
 }
 
 // --- 文件序列化与反序列化 ---
@@ -491,10 +572,9 @@ std::unique_ptr<BPlusTree> TableProcessor::buildIndex() {
     std::ifstream dataFile(dataFilePath);
     if (!dataFile.is_open()) return tree;
 
-    long recordPosition = 0;
+    long long recordPosition = 0;
     std::string line;
     int lineNumber = 0;
-
     while (true) {
         recordPosition = dataFile.tellg();
 
@@ -517,3 +597,81 @@ std::string TableProcessor::getColumnType() const {
     return targetColumnType;
 }
 
+
+// --- IndexManager 实现 ---
+
+class IndexManager {
+private:
+    static std::unordered_map<std::string, std::shared_ptr<BPlusTree>> indexCache;
+    static std::mutex cacheMutex;
+
+public:
+
+    // 检查索引是否存在（内存或磁盘）
+    static bool isIndexExist(const std::string& indexPath) {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+
+        // 1. 检查内存缓存
+        if (indexCache.find(indexPath) != indexCache.end()) {
+            return true;
+        }
+
+        // 2. 检查磁盘文件
+        std::ifstream f(indexPath);
+        return f.good(); // 使用之前定义的fileExists函数
+    }
+    // 核心方法：获取或反序列化索引
+    static std::shared_ptr<BPlusTree> getOrDeserializeIndex(const std::string& indexPath) {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+
+        // 1. 检查内存缓存
+        auto it = indexCache.find(indexPath);
+        if (it != indexCache.end()) {
+            return it->second;
+        }
+
+        // 2. 检查文件是否存在
+        std::ifstream f(indexPath);
+        if (!f.good()) {
+            std::cerr << "Index file not found: " << indexPath << std::endl;
+            return nullptr;
+        }
+
+        // 3. 从文件反序列化重建B+树
+        auto tree = std::make_shared<BPlusTree>();
+        if (tree->deserializeFromFile(indexPath)) {
+            indexCache[indexPath] = tree;
+            std::cout << "Successfully deserialized index: " << indexPath << std::endl;
+            return tree;
+        }
+
+        std::cerr << "Failed to deserialize index: " << indexPath << std::endl;
+        return nullptr;
+    }
+
+    // 强制重新从文件加载
+    static bool reloadIndex(const std::string& indexPath) {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+
+        auto tree = std::make_shared<BPlusTree>();
+        if (!tree->deserializeFromFile(indexPath)) {
+            return false;
+        }
+
+        indexCache[indexPath] = tree;
+        return true;
+    }
+
+    static void addToCache(const std::string& indexPath, std::shared_ptr<BPlusTree> tree) {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        indexCache[indexPath] = tree;
+    }
+
+    static void removeFromCache(const std::string& indexPath) {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        auto it = indexCache.find(indexPath);
+        if (it != indexCache.end()) {
+            indexCache.erase(it);
+        }
+    }
+};
