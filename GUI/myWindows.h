@@ -99,7 +99,9 @@ private slots:
     // void closeTab(int index);
 
     //刷新历史记录（及其中条目内容）
-    void refreshHistory();
+    void refreshAllHistory();
+    void refreshThisHistory();
+    void clearHistory();
 
     //用户手动退出主界面（跳转登录）
     void ExitLogin();
@@ -121,7 +123,9 @@ private:
 
     // UI组件
     QListWidget *historyList;          // 右侧历史记录
-    QPushButton *refreshBtn;
+    QPushButton *refreshAllBtn;
+    QPushButton *refreshThisBtn;
+    QPushButton *clearHistoryBtn;
     QStackedWidget *resultStack;       // 显示各个查询结果
     QMap<int, QString> commandMap;     // 保存历史记录文本（可选）
     QWidget *inputWidget;
@@ -159,7 +163,7 @@ private:
     void newFile();
 
     //页面操作
-    void executeCmdOrder(QString& command);
+    void executeCmdOrder(int status,QString& command,int index=0);
 
     //网络连接类
     InternetConnector *connector;

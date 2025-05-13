@@ -44,10 +44,17 @@ void MyMainWindow::createLayout() {
     // 创建右侧容器
     QWidget *historyPanel = new QWidget();
     QVBoxLayout *historyLayout = new QVBoxLayout(historyPanel);
-    refreshBtn = new QPushButton("刷新历史");
+    QHBoxLayout *buttonLayout = new QHBoxLayout(historyPanel);
+
+    refreshThisBtn = new QPushButton("刷新当前");
+    refreshAllBtn = new QPushButton("刷新全部");
+    clearHistoryBtn = new QPushButton("清空");
+    buttonLayout->addWidget(refreshThisBtn);
+    buttonLayout->addWidget(refreshAllBtn);
+    buttonLayout->addWidget(clearHistoryBtn);
 
     historyLayout->addWidget(historyList);
-    historyLayout->addWidget(refreshBtn);
+    historyLayout->addLayout(buttonLayout);
     historyLayout->setStretch(0, 1); // 列表可扩展
     historyLayout->setStretch(1, 0); // 按钮固定大小
     connect(historyList, &QListWidget::currentRowChanged, [this](int index) {
@@ -141,55 +148,12 @@ void MyMainWindow::updateDBTree() {
     }
 }
 
-void MyMainWindow::refreshHistory() {
-    QVector<QString> newCommands;
-    QVector<QWidget*> newResultWidgets;
+void MyMainWindow::refreshAllHistory() {
+    // Step 1: 保存原有所有命令（不区分 success/failure）
+    QVector<QString> oldCommands = historyCommands;
 
-    // 遍历历史列表
-    for (int i = 0; i < historyList->count(); ++i) {
-        QString itemText = historyList->item(i)->text();
-        if (itemText.endsWith("(Failure)", Qt::CaseInsensitive)) {
-            continue;  // 跳过失败记录
-        }
-
-        QString cmd = historyCommands[i]; // 取原始命令
-        connector->sendOrder(cmd);
-        QJsonObject response = connector->receiveMassage();
-
-        // 构造新页面
-        QWidget *resultWidget = new QWidget();
-        QVBoxLayout *layout = new QVBoxLayout(resultWidget);
-        layout->addWidget(new QLabel(cmd + "   (" + response["Status"].toString() + ")"));
-
-        QTableWidget *table = new QTableWidget();
-        layout->addWidget(table);
-
-        if (response.contains("Mass") && response["Mass"].isObject()) {
-            auto mass = response["Mass"].toObject();
-            QJsonArray headers = mass["Header"].toArray();
-            QJsonArray data = mass["Data"].toArray();
-
-            table->setColumnCount(headers.size());
-            QStringList headerLabels;
-            for (const auto &h : headers)
-                headerLabels << h.toString();
-            table->setHorizontalHeaderLabels(headerLabels);
-
-            table->setRowCount(data.size());
-            for (int i = 0; i < data.size(); ++i) {
-                QJsonArray row = data[i].toArray();
-                for (int j = 0; j < row.size(); ++j) {
-                    table->setItem(i, j, new QTableWidgetItem(row[j].toString()));
-                }
-            }
-        }
-
-        newCommands.append(cmd);
-        newResultWidgets.append(resultWidget);
-    }
-
-    // 清空旧记录
-    historyCommands = newCommands;
+    // Step 2: 清空历史记录和界面
+    historyCommands.clear();
     historyList->clear();
 
     while (resultStack->count() > 0) {
@@ -198,19 +162,36 @@ void MyMainWindow::refreshHistory() {
         delete w;
     }
 
-    // 重新插入新的
-    for (int i = 0; i < newCommands.size(); ++i) {
-        QString title = newCommands[i].section(' ', 0, 0).toUpper();
-        connector->sendOrder(newCommands[i]);
-        QJsonObject response = connector->receiveMassage();
-        QString status = response["Status"].toString();
-        historyList->addItem(title + " (" + status + ")");
-        resultStack->addWidget(newResultWidgets[i]);
+    // Step 3: 顺序执行每条命令，保持原顺序
+    for (QString &cmd : oldCommands) {
+        executeCmdOrder(1,cmd);  // 你现有的方法，内部会加到 historyCommands、更新 UI
     }
 
     if (historyList->count()!=0)
-        historyList->setCurrentRow(0);  // 默认选中第一项
+        historyList->setCurrentRow(0);
 }
+
+//针对单条刷新，我们重新
+void MyMainWindow::refreshThisHistory(){
+    int index = historyList->currentRow();
+    executeCmdOrder(2,historyCommands[index],index);
+}
+void MyMainWindow::clearHistory() {
+    // 清空历史命令记录
+    historyCommands.clear();
+
+    // 清空右侧历史列表 UI
+    historyList->clear();
+
+    // 清空结果页面，并删除页面指针，确保释放内存
+    while (resultStack->count() > 0) {
+        QWidget *w = resultStack->widget(0);
+        resultStack->removeWidget(w);
+        delete w; // 关键点：删除 widget 本体，避免内存泄漏
+    }
+
+}
+
 
 
 void MyMainWindow::createWindow() {
@@ -260,7 +241,7 @@ void MyMainWindow::createWindow() {
 void MyMainWindow::checkForCmdEnd() {
     QString command = cmdInput->toPlainText().trimmed();
     if (command.endsWith(";")) {
-        executeCmdOrder(command);
+        executeCmdOrder(0,command);
     }
 }
 void MyMainWindow::saveFile(){
@@ -289,7 +270,7 @@ void MyMainWindow::executeScriptOrder() {
         oriCommand.chop(1);
         QStringList commands = oriCommand.split(';');
         for(QString& command:commands){
-            executeCmdOrder(command);//复用命令行命令执行函数
+            executeCmdOrder(1,command);//复用命令行命令执行函数
         }
         // 清空输入框，准备下一个命令
         cmdInput->clear();
@@ -299,7 +280,9 @@ void MyMainWindow::executeScriptOrder() {
         QMessageBox::warning(this, "非法结尾", "命令必须以\';\'结尾");
     }
 }
-void MyMainWindow::executeCmdOrder(QString& command) {
+
+//约定:0为命令行用（会清命令行），1为文本用（无特殊），2为单条刷新（需替换对应结果框）
+void MyMainWindow::executeCmdOrder(int status,QString& command,int index) {
 
     // 获取输入的命令并去掉首尾空格
     command.replace("\n", " ");  // 替换换行符为空格
@@ -352,15 +335,16 @@ void MyMainWindow::executeCmdOrder(QString& command) {
 
     // 表格占据剩余空间
     resultLayout->addWidget(table);
-
+    QListWidgetItem *item;
+    HistoryItemWidget *historyWidget;
+    if(status != 2){
     // 添加到结果堆栈
     resultStack->addWidget(resultWidget);
 
     // 添加到历史列表
-    //QString title = command.section(' ', 0, 0).toUpper();
     QString title = command;
-    QListWidgetItem *item = new QListWidgetItem();
-    HistoryItemWidget *historyWidget = new HistoryItemWidget(title);
+    item = new QListWidgetItem();
+    historyWidget = new HistoryItemWidget(title);
 
     // 设置到列表中
     historyList->addItem(item);
@@ -378,10 +362,27 @@ void MyMainWindow::executeCmdOrder(QString& command) {
     delete toDelete;
     delete historyList->takeItem(row);
     });
+    }else if(status==2){
+            // 替换行为：更新索引对应的内容
+            // 替换 resultStack 中旧页面
+            QWidget *oldWidget = resultStack->widget(index);
+            resultStack->removeWidget(oldWidget);
+            delete oldWidget;
+            resultStack->insertWidget(index, resultWidget);
+            resultStack->setCurrentIndex(index);
 
-    // 清空输入框，准备下一个命令
-    cmdInput->clear();
+            // 替换 historyList 显示条目
+            item = historyList->item(index);
+            historyWidget = new HistoryItemWidget(command);
+            historyList->setItemWidget(item, historyWidget);
+            historyList->setCurrentItem(item);
 
+    }
+
+    if(status==0){
+        // 清空输入框，准备下一个命令
+        cmdInput->clear();
+    }
 }
 
 void MyMainWindow::switchCmdMode() {
@@ -425,6 +426,11 @@ MyMainWindow::MyMainWindow(InternetConnector *connector,QWidget *parent)
     connect(saveBtn, &QPushButton::clicked, this, &MyMainWindow::saveFile);
     connect(dbTreeView, &QTreeWidget::itemDoubleClicked, this, &MyMainWindow::onTreeItemDoubleClicked);
 
+    connect(refreshAllBtn,&QPushButton::clicked, this, &MyMainWindow::refreshAllHistory);
+    connect(refreshThisBtn, &QPushButton::clicked, this, &MyMainWindow::refreshThisHistory);
+    connect(clearHistoryBtn, &QPushButton::clicked, this, &MyMainWindow::clearHistory);
+
+
 
 }
 void MyMainWindow::onTreeItemDoubleClicked(QTreeWidgetItem *item) {
@@ -451,7 +457,7 @@ void MyMainWindow::onTreeItemDoubleClicked(QTreeWidgetItem *item) {
         sql = QString("SELECT %1 FROM %2;").arg(columnName, tableName);
 
     }
-    executeCmdOrder(sql);
+    executeCmdOrder(1,sql);
 
 }
 
@@ -571,7 +577,7 @@ void MyMainWindow::showCreateTableDialog() {
             sql += ",\n  " + constraints.join(",\n  ");
         sql += "\n);";
 
-        executeCmdOrder(sql);
+        executeCmdOrder(1,sql);
     }
 }
 
@@ -694,7 +700,7 @@ void MyMainWindow::showAlterTableDialog() {
                 }
             }
 
-            executeCmdOrder(sql);
+            executeCmdOrder(1,sql);
         }
     }
 }
@@ -708,7 +714,7 @@ void MyMainWindow::showDropTableDialog() {
 
     if (ok && !tableName.trimmed().isEmpty()) {
         QString dropSQL = QString("DROP TABLE %1;").arg(tableName.trimmed());
-        executeCmdOrder(dropSQL);  //  直接执行SQL
+        executeCmdOrder(1,dropSQL);  //  直接执行SQL
     }
 }
 
