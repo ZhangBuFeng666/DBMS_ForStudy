@@ -1,0 +1,7 @@
+primary_key 0
+not_null 0
+unique 0
+not_null 1
+unique 1
+not_null 2
+unique 3
