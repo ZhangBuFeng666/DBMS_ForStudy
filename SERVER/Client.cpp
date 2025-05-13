@@ -1,5 +1,6 @@
 #include "Client.h"
 #include "Tools.h"
+#include "Logs.h"
 #include "SQLInterface.h" // 包含 SQLInterface
 #include "SQLParser.h"   // 包含 SQLCommand 和 SelectResult
 #include <iostream>
@@ -7,6 +8,7 @@
 #include <nlohmann/json.hpp>// 确保包含
 
 using namespace std;
+using namespace logs;
 using json = nlohmann::json;
 ClientSession::~ClientSession() {
         try {
@@ -16,7 +18,11 @@ ClientSession::~ClientSession() {
         }
         catch (std::exception& e) {
             // 记录日志但禁止异常传播
-            std::cerr << "人Exception in ClientSession::~ClientSession(): " << e.what() << "\n";
+            string serr = "人Exception in ClientSession::~ClientSession(): ";
+            serr += e.what();
+            std::cerr << serr << "\n";
+            Logger::log(serr);
+
         }
     }
     
@@ -26,13 +32,13 @@ void ClientSession::start(ThreadPool& pool) {
     pool.enqueueTask([this] {
         this->client_handle_recv();
         });
-    std::cout << "接收线程启动，本次链接ID:" << client_id << "\n";
-
+    string slog1 = "接收线程启动，本次链接ID:"+to_string(client_id);
+    std::cout << slog1 << "\n";
+    Logger::log(slog1);
     pool.enqueueTask([this] {
         this->client_handle_send();
         });
     //worker_thread_send = std::thread(&ClientSession::client_handle_send, this);
-    std::cout << "发送线程启动，本次链接ID:" << client_id << "\n";
 }
 void ClientSession::stop(std::thread worker_thread) {
     is_active = false;
@@ -65,15 +71,18 @@ void ClientSession::client_handle_recv() {
 
                     std::string json_str = recv_buffer.substr(0, json_end); // 提取 JSON 字符串
                     recv_buffer.erase(0, json_end); // 从缓冲区移除已提取的部分
-
-                    cout << "链接ID:" << client_id << " 收到完整JSON: " << json_str << endl;
-
+                    string slog = "链接ID:" + to_string(client_id);
+                    slog += " 收到完整JSON: " + json_str;
+                    cout << slog << endl;
+                    Logger::log(slog);
                     json return_json = { {"Type", u8"Unknown"}, {"Status", u8"Failure"}, {"Mass", u8""}}; // 初始化响应 JSON
 
                     try {
                         json received_json = json::parse(json_str); // 解析收到的 JSON
                         if (!received_json.contains("Type")) {
-                            cerr << "错误: 收到的 JSON 格式无效 (缺少 Type)" << endl;
+                            string serr = "错误: 收到的 JSON 格式无效 (缺少 Type)";
+                            cerr << serr << endl;
+                            Logger::log(serr);
                             return_json["Mass"] = u8"错误: 无效的请求格式。";
                             send_massage(return_json);
                             continue; // 处理下一个 JSON
@@ -124,23 +133,17 @@ void ClientSession::client_handle_recv() {
                                 return_json["Mass"] = u8"错误: 用户已登录!";
                                 break;
                             }
-                            if (!mass.is_string()) {
-                                return_json["Mass"] = "错误: Login 的 Mass 必须是字符串 '用户名 密码'。"; break;
-                            }
-                            string login_info = mass.get<string>();
-                            stringstream ss(login_info);
                             string username, password;
 
                             if (mass.contains("ID") && mass.contains("Password")) {
                                 username = mass["ID"];
                                 password = mass["Password"];
                             }
-                            else {
+                           else {
                                 std::cerr << "mass字段不存在或格式错误\n";
                                 break;
                             }
-                            //string login_info = mass.get<string>();
-                            //stringstream ss(login_info);
+
                             if (username.empty() || password.empty()) {
                                 return_json["Mass"] = u8"错误: 用户名或密码不能为空。";
                                 break;
@@ -153,7 +156,11 @@ void ClientSession::client_handle_recv() {
                                     this->user_name = username; // 保存用户名
                                     this->is_logged_in = true; // 设置登录状态
                                     this->current_database = username; // 登录后默认使用用户同名数据库
-                                    cout << "用户 '" << username << "' 登录，当前数据库设置为 '" << this->current_database << "'" << endl;
+                                    string slog = "用户 '" + username + "' 登录，当前数据库设置为 '" + this->current_database;
+                                    slog += "'";
+                                    cout << slog<< endl;
+                                    Logger::log(slog);
+
                                 }
                                 else {
                                     return_json["Status"] = u8"Failure";
@@ -179,9 +186,9 @@ void ClientSession::client_handle_recv() {
                                 return_json["Mass"] = u8"错误: SQL 语句不能为空。";
                                 break;
                             }
-
-                            cout << "处理 Order (SQL): " << sql_statement << ", 当前数据库: " << this->current_database << endl;
-
+                            string slog = "处理 Order (SQL): " + sql_statement + ", 当前数据库: " + this->current_database;
+                            cout << slog << endl;
+                            Logger::log(slog);
                             string result_message;
                             SelectResult select_result;
                             // 调用 SQLInterface 处理命令
@@ -190,6 +197,8 @@ void ClientSession::client_handle_recv() {
 
                             return_json["Status"] = cmd_success ? u8"Success" : u8"Failure";
 
+                            cout << result_message << endl;
+                            Logger::log(result_message);
                             // --- 处理返回结果 ---
                             if (select_result.success && !select_result.header.empty()) { // 如果是成功的 SELECT 查询
                                 // 将 SelectResult 格式化为 JSON (或字符串)
@@ -208,20 +217,30 @@ void ClientSession::client_handle_recv() {
 
                         case RecvStatusType::Unknown:
                         default:
-                            cerr << "错误: 未知的命令类型 '" << type_str << "'" << endl;
+                            string serr1 = "错误: 未知的命令类型 '" + type_str;
+                            serr1 += "'";
+                            cerr <<  serr1 << endl;
+                            Logger::log(serr1);
                             return_json["Mass"] = u8"错误: 不支持的命令类型。";
                             break;
                         } // 结束 switch(cmd)
 
                     }
                     catch (const json::parse_error& e) {
-                        cerr << "错误: JSON 解析失败: " << e.what() << " 对于字符串: " << json_str << endl;
+                        string serr2 = "错误: JSON 解析失败: ";
+                        serr2+=e.what();
+                        serr2 +=  " 对于字符串: " + json_str;
+                        cerr << serr2  << endl;
+                        Logger::log(serr2);
                         return_json["Type"] = u8"Error";
                         return_json["Mass"] = u8"错误: 请求的 JSON 格式无效。";
                         // 不清空缓冲区，因为可能只是部分 JSON 错误
                     }
                     catch (const std::exception& e) {
-                        cerr << "错误: 处理命令时发生异常: " << e.what() << endl;
+                        string serr3 = "错误: 处理命令时发生异常: ";
+                        serr3+= e.what();
+                        cerr << serr3 << endl;
+                        Logger::log(serr3);
                         return_json["Type"] = u8"Error";
                         return_json["Mass"] = u8"错误: 服务器内部错误。";
                     }
@@ -233,12 +252,19 @@ void ClientSession::client_handle_recv() {
 
             }
             else if (n == 0) {
-                cout << "链接ID:" << client_id << " 客户端断开连接。" << endl;
+                string slog = "链接ID:" + to_string(client_id);
+                slog += " 客户端断开连接。";
+                cout << slog  << endl;
+                Logger::log(slog);
                 is_active = false; // 标记为非活动
                 break; // 退出外层循环
             }
             else { // n < 0，发生错误
-                cerr << "链接ID:" << client_id << " 接收数据时发生错误 (返回值 " << n << ")。" << endl;
+                string slog = "链接ID:" + to_string(client_id);
+                slog += " 接收数据时发生错误 (返回值 " + to_string(n);
+                slog+=")。";
+                cerr << slog<< endl;
+                Logger::log(slog);
                 is_active = false; // 标记为非活动
                 break; // 退出外层循环
             }
@@ -246,14 +272,18 @@ void ClientSession::client_handle_recv() {
 
     }
     catch (const std::exception& e) {
-        cerr << "链接ID:" << client_id << " client_handle_recv 发生未捕获异常: " << e.what() << endl;
-    }
-    catch (...) {
-        cerr << "链接ID:" << client_id << " client_handle_recv 发生未知类型异常。" << endl;
-    }
+        string serr = "链接ID:" + to_string(client_id);
+        serr += " client_handle_recv 发生未捕获异常: ";
+        serr += e.what();
+        cerr << serr << endl;
+        Logger::log(serr);
 
+    }
     // 线程即将退出，进行清理
-    cout << "链接ID:" << client_id << " 接收处理线程退出。" << endl;
+    string slog = "链接ID:" + to_string(client_id);
+    slog += " 接收处理线程退出。";
+    cout << slog<< endl;
+    Logger::log(slog);
     is_active = false; // 确保标记为非活动
     // 可能需要通知发送线程也退出
     send_cv.notify_one();
@@ -303,8 +333,10 @@ bool ClientSession::send_massage(json& data){
         std::string json_str = data.dump();
         enqueue_message(json_str);
     }
-    catch (std::exception& e) {
-        std::cerr << "Exception in ClientSession::send_massage(): " << e.what() << "\n";
+    catch (exception& e) {
+        string slog = "Exception in ClientSession::send_massage():";
+        slog += e.what();
+        cerr << slog << "\n";
         return false;
     }
 
@@ -344,8 +376,12 @@ void ClientSession::client_handle_send() {
             }
         }
     }
-    catch (...) {
+    catch (exception e) {
+        string slog = "Exception in ClientSession::client_handle_send():";
+        slog += e.what();
+        cerr << slog << "\n";
         /////////////////////////////////////handle_error();
+        Logger::log(slog);
         is_active = false;
     }
 

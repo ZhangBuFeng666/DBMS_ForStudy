@@ -4,7 +4,7 @@
 // 线程池构造函数
 ThreadPool::ThreadPool(size_t numThreads) : stop(false) {
     for (size_t i = 0; i < numThreads; ++i) {
-        workers.emplace_back(&ThreadPool::multi_work_hread, this);
+        workers.emplace_back(&ThreadPool::multiWorkThread, this);
     }
 }
 
@@ -30,7 +30,7 @@ void ThreadPool::enqueueTask(std::function<void()> task) {
 }
 
 // 工作线程函数
-void ThreadPool::multi_work_hread() {
+void ThreadPool::multiWorkThread() {
     while (true) {
         std::function<void()> task;
         {

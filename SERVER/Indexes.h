@@ -75,24 +75,33 @@ IndexType mapColumnType(const std::string& dbType) {
 
 // ================== B+树节点定义 ==================
 class BPlusNode {
-public:
+friend class BPlusTree;
+private:
     bool isLeaf;
     std::vector<IndexKey> keys;
     BPlusNode* parent;
+public:
+    
     BPlusNode(bool leaf = false) : isLeaf(leaf), parent(nullptr) {}
     virtual ~BPlusNode() = default;
 };
 
 class BPlusLeafNode : public BPlusNode {
-public:
+friend class BPlusTree;
+private:
     std::vector<long> values;
     BPlusLeafNode* next;
+public:
+    
     BPlusLeafNode() : BPlusNode(true), next(nullptr) {}
 };
 
 class BPlusInternalNode : public BPlusNode {
-public:
+    friend class BPlusTree;
+private:
     std::vector<BPlusNode*> children;
+
+public:
     BPlusInternalNode() : BPlusNode(false) {}
     ~BPlusInternalNode() {
         for (auto child : children) {

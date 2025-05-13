@@ -156,7 +156,7 @@ void MyMainWindow::executeCmdOrder(QString& command) {
     // 发送命令、接收响应
     connector->sendOrder(command);
     QJsonObject response = connector->receiveMassage();
-    QString responseText = QString(QJsonDocument(response).toJson(QJsonDocument::Indented));
+    // QString responseText = QString(QJsonDocument(response).toJson(QJsonDocument::Indented));
 
     // 获取命令第一个单词作为标签页标题
     QStringList commandParts = command.split(' ', Qt::SkipEmptyParts);
@@ -169,7 +169,7 @@ void MyMainWindow::executeCmdOrder(QString& command) {
     resultLayout->setContentsMargins(5, 5, 5, 5);
 
     // 顶部显示命令原文
-    resultLayout->addWidget(new QLabel(command));
+    resultLayout->addWidget(new QLabel(command+"   ("+response["Status"].toString()+")"));
 
     // 创建表格
     QTableWidget* table = new QTableWidget();

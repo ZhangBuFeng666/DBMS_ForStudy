@@ -16,6 +16,12 @@ struct SelectResult {
     std::string errorMessage;                     // 如果 success 为 false，存储错误信息
 };
 
+struct LoadedColumnConstraints {
+    bool isPrimaryKey = false;
+    bool isNotNull = false;
+    bool isUnique = false;
+};
+
 
 // SQL 接口类，封装数据库操作逻辑
 class SQLInterface {
@@ -29,11 +35,12 @@ private:
 public:
     // --- (构造函数, 用户/数据库管理, DDL, INSERT, UPDATE, DELETE 方法保持不变) ---
     SQLInterface() {} // 默认构造函数
-    bool create_user(const std::string& username, const std::string& password, const std::string& privilege);
+    bool create_user(const std::string& username, const std::string& password, const int right);
     bool create_database(const std::string& username);
     bool create_table(const std::string& dbName, const std::string& tableName,
         const std::vector<std::pair<std::string, std::string>>& fieldsWithType,
-        const std::map<std::string, int>& constraints);
+        const std::map<std::string, int>& tableLevelConstraints, // 例如 "primary_key" -> index
+        const std::vector<ColumnConstraintInfo>& columnConstraints);
     bool drop_table(const std::string& dbName, const std::string& tableName);
     bool alter_table(const SQLCommand& command);
     bool insert_into_table(const std::string& dbName, const std::string& tableName, const std::vector<std::string>& values);

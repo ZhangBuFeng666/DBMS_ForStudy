@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>         // for std::make_unique, std::move
 #include <system_error>   // for std::system_error (socket 错误)
+#include "Logs.h"
 
 // Windows specific for select and WSAErrors if applicable
 #ifdef _WIN32
@@ -13,6 +14,7 @@
 
 using namespace mySocket; // 假设 DBSocket 在这个命名空间
 using namespace std;
+using namespace logs;
 
 namespace myServer {
 
@@ -60,14 +62,19 @@ namespace myServer {
             server_sock.listen();
         }
         catch (const std::exception& e) {
-            std::cerr << "错误: 服务器启动失败 (bind/listen): " << e.what() << std::endl;
+            string serr = "错误: 服务器启动失败 (bind/listen): ";
+            serr+=e.what();
+            std::cerr << serr << std::endl;
+            Logger::log(serr);
             running = false;
             return;
         }
 
-
-        std::cout << "Server started on port " << port << " ..." << std::endl;
-
+        string slogStart = "Server started on port ";
+        slogStart += to_string(port);
+        slogStart += " ...";
+        std::cout << slogStart << std::endl;
+        Logger::log(slogStart);
 
         while (this->is_running())
         {
@@ -77,7 +84,10 @@ namespace myServer {
             SOCKET listen_fd = server_sock.get_fd();
             if (listen_fd == INVALID_SOCKET) {
                 if (running) { // 仅在预期运行时报错
-                    std::cerr << "错误: 监听套接字无效，服务器停止。" << std::endl;
+                    string serr = "错误: 监听套接字无效，服务器停止。";
+                    std::cerr << serr << std::endl;
+                    Logger::log(serr);
+
                 }
                 running = false;
                 break;
@@ -97,9 +107,10 @@ namespace myServer {
                         // 接受新连接
                         DBSocket client_sock = server_sock.accept();
                         int client_temp_id = ++client_id; // 注意线程安全（如果多线程 accept）
-
-                        std::cout << "接受到新连接，分配 ID: " << client_temp_id << std::endl;
-
+                        string slog = "接收到新连接，分配 ID: ";
+                        slog += to_string(client_temp_id);
+                        std::cout << slog << std::endl;
+                        Logger::log(slog);
                         // --- **修改这里：创建 ClientSession 时传递 sqlInterface 引用** ---
                         auto new_session = std::make_unique<ClientSession>(
                             std::move(client_sock),     // 转移 socket 所有权
@@ -113,25 +124,39 @@ namespace myServer {
 
                         // 启动客户端会话 (访问 map 可能需要锁，取决于 add 的实现)
                         // 为了安全，这里也加上锁访问
-                        {
-                            std::lock_guard<std::mutex> lock(mutexes);
-                            if (clients.count(client_temp_id)) {
-                                std::cout << "启动客户端会话 ID: " << client_temp_id << std::endl;
-                                clients[client_temp_id]->start(threadPool);
-                            }
-                            else {
-                                std::cerr << "错误: 添加客户端会话 " << client_temp_id << " 后无法在 map 中找到，启动失败。" << std::endl;
-                            }
+
+                        std::lock_guard<std::mutex> lock(mutexes);
+                        if (clients.count(client_temp_id)) {
+                            string slog2 = "启动客户端会话 ID: ";
+                            slog2+=to_string(client_temp_id);
+                            std::cout<< slog2 << std::endl;
+                            Logger::log(slog2);
+                            clients[client_temp_id]->start(threadPool);
                         }
+                        else {
+                            string serr = "错误: 添加客户端会话 " +to_string(client_temp_id) + " 后无法在 map 中找到，启动失败。";
+                            std::cerr << serr<< std::endl;
+                            Logger::log(serr);
+
+                        }
+
 
 
                     }
                     catch (const std::system_error& e) {
                         if (!this->is_running()) break;
-                        std::cerr << "Accept error: " << e.what() << std::endl;
+                        string serr = "Accept error: ";
+                        serr += e.what();
+                        std::cerr << serr << std::endl;
+                        Logger::log(serr);
+
                     }
                     catch (const std::exception& e) { // 捕获其他可能的异常
-                        std::cerr << "处理新连接时发生错误: " << e.what() << std::endl;
+                        string serr = "处理新连接时发生错误: ";
+                        serr += e.what();
+                        std::cerr << serr << std::endl;           
+                        Logger::log(serr);
+
                     }
                 } // 结束 if FD_ISSET
             } // 结束 if ready > 0
@@ -144,12 +169,16 @@ namespace myServer {
 #ifdef _WIN32
                 int error_code = WSAGetLastError();
                 if (error_code != WSAEINTR && running) { // 忽略中断，运行时才报错
-                    std::cerr << "Select error: " << error_code << std::endl;
+                    string serr = "Select error: "+to_string(error_code);
+                    std::cerr << serr << std::endl;
+                    Logger::log(serr);
                     running = false; // 发生严重错误，停止服务器
                 }
 #else
                 if (errno != EINTR && running) {
-                    std::cerr << "Select error: " << errno << " (" << strerror(errno) << ")" << std::endl;
+                    string serr = "Select error: " + to_string(errno)+ " (" + to_string(strerror(errno)) + ")";
+                    std::cerr << serr << std::endl;
+                    Logger::log(serr);
                     running = false;
                 }
 #endif

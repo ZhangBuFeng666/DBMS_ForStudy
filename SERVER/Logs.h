@@ -2,15 +2,11 @@
 
 #ifndef LOGS_H
 #define LOGS_H
-
+#include<string>
 namespace logs {
-	class changeLog {
+	class Logger {
 	public:
-        	changeLog();
-        	~changeLog();
-
-			bool write_log(const char* log);
-			bool read_log(const char* log);
+		static void log(const std::string& message);
 	};
 
 }

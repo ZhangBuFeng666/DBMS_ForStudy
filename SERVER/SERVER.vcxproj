@@ -132,7 +132,7 @@
   <ItemGroup>
     <ClCompile Include="BPlusTree.cpp" />
     <ClCompile Include="BufferManager.cpp" />
-    <ClCompile Include="ChangeLog.cpp" />
+    <ClCompile Include="Logger.cpp" />
     <ClCompile Include="Client.cpp" />
     <ClCompile Include="DiffPlat.cpp" />
     <ClCompile Include="DiffPlat.h" />
@@ -140,7 +140,6 @@
     <ClCompile Include="Foreign.cpp" />
     <ClCompile Include="Identity.cpp" />
     <ClCompile Include="LockManager.cpp" />
-    <ClCompile Include="Logs.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="SQLInterface.cpp" />
     <ClCompile Include="SQLParser.cpp" />
@@ -170,6 +169,9 @@
     <ClInclude Include="Storage.h" />
     <ClInclude Include="ThreadPool.h" />
     <ClInclude Include="Tools.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ClassDiagram.cd" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
