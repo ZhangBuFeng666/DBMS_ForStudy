@@ -685,7 +685,60 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
         
        
     }
-    // 8. 解析SELECT语句
+    // 8. 解析SELECT语句————————————先join，再无join
+    //有join
+    std::regex selectWithJoinRegex(
+        R"(SELECT\s+(DISTINCT\s+)?(.*?)\s+FROM\s+(\w+)\s+)"               // SELECT(opt_distinct) cols(2) FROM table1(3)
+        R"((?:INNER\s+)?JOIN\s+(\w+)\s+ON\s+([\w\.]+)\s*(<>|>=|<=|=|>|<)\s*([\w\.]+))" // (opt_INNER) JOIN table2(4) ON col1_expr(5) CAPTURED_OPERATOR(6) col2_expr(7)
+        R"(\s*(WHERE\s+.*?)?(ORDER\s+BY\s+.*?)?\s*;?\s*$)",               // Optional WHERE(8) Optional ORDER_BY(9)
+        std::regex::icase
+    );
+    // 捕获组说明:
+    // match[1]: DISTINCT (可选)
+    // match[2]: 列列表 (e.g., "col1, table1.col2")
+    // match[3]: 第一个表名 (table1)
+    // match[4]: 第二个表名 (table2)
+    // match[5]: ON 条件左侧列 (e.g., "table1.colA")
+    // \s*(<>|>=|<=|=|>|<)\s*: 捕获比较运算符（<>, >=, <=, =, >, <）（捕获组6）。
+    // match[6]: ON 条件右侧列 (e.g., "table2.colB")
+    // match[7]: WHERE 子句 (可选)
+    // match[8]: ORDER BY 子句 (可选)
+    if (std::regex_match(sql, match, selectWithJoinRegex)) {
+        cmd.type = SQLCommand::SELECT;
+        cmd.distinct = match[1].matched; // 可选的 DISTINCT
+        parse_select_list(match[2].str(), cmd); // 解析选择的列
+        cmd.fromTable = match[3].str();     // 第一个表名 (table1)
+
+        cmd.hasJoin = true;
+        // 基于匹配到的 "JOIN" 或 "INNER JOIN" 设置 joinType
+        // (一个简单的检查，可以根据您的具体需求调整)
+        std::string full_join_clause_match_for_type_check = match[0].str(); // 获取整个匹配的字符串来检查 "INNER"
+        
+        cmd.joinType = "INNER"; // 或者固定为 "INNER" 因为目前只支持内连接
+
+        cmd.joinTable = match[4].str();           // 第二个表名 (table2)
+        cmd.joinOnConditionLeft = match[5].str(); // ON 条件的左侧列
+        cmd.joinOperator = match[6].str();        // **** 新增：捕获到的比较运算符 ****
+        cmd.joinOnConditionRight = match[7].str();// ON 条件的右侧列
+
+        // 注意：WHERE 和 ORDER BY 子句的捕获组索引会向后移动
+        if (match[8].matched) { // WHERE 子句现在是捕获组 8
+            cmd.whereClauseStr = trim(match[8].str());
+            if (!parse_where_clause(cmd.whereClauseStr, cmd)) {
+                std::cerr << "错误: 解析 SELECT (JOIN) 语句中的 WHERE 子句失败。" << std::endl;
+                cmd.type = SQLCommand::UNKNOWN;
+            }
+        }
+        if (match[9].matched) { // ORDER BY 子句现在是捕获组 9
+            if (!parse_order_by_clause(match[9].str(), cmd)) {
+                std::cerr << "错误: 解析 SELECT (JOIN) 语句中的 ORDER BY 子句失败。" << std::endl;
+                cmd.type = SQLCommand::UNKNOWN;
+            }
+        }
+        return cmd;
+    }
+
+    //无join，即单表
     regex selectRegex(R"(SELECT\s+(DISTINCT\s+)?(.*?)\s+FROM\s+(\w+)\s*(WHERE\s+.*?)?(ORDER\s+BY\s+.*?)?\s*;?\s*$)", regex::icase);
     if (regex_match(sql, match, selectRegex)) {
         cmd.type = SQLCommand::SELECT;

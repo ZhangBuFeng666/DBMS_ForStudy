@@ -89,6 +89,16 @@ struct SQLCommand {
     std::string orderByColumn;              // ORDER BY 子句指定的排序列名 (如果为空则不排序)
     enum SortOrder { ASC, DESC } sortOrder = ASC; // 排序顺序 (默认 ASC 升序)
 
+    // 新增: JOIN 操作相关字段
+    bool hasJoin = false;                   // 标记是否有 JOIN 子句
+    std::string joinType;                   // JOIN 类型 (例如 "INNER", "LEFT" - 初期可先实现 "INNER")
+    std::string joinTable;                  // JOIN 的第二个表名
+    std::string joinOnConditionLeft;        // ON 条件的左侧列 (例如 "table1.columnA" 或 "columnA")
+    std::string joinOperator;               // **** 新增字段: 用于存储 JOIN ON 条件中的比较运算符 ****
+    std::string joinOnConditionRight;       // ON 条件的右侧列 (例如 "table2.columnB" 或 "columnB")
+    // 注意: 为了处理 table.column 格式，selectColumns, whereColumn, orderByColumn,
+    // joinOnConditionLeft, joinOnConditionRight 中的字符串可能需要存储或能够解析这种格式。
+
 };
 
 // SQL 解析器类
