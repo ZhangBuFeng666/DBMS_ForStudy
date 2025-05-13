@@ -1,5 +1,33 @@
 #include "Indexes.h"
 
+std::ostream& operator<<(std::ostream& os, const IndexKey& key) {
+    os << key.key_str;
+    return os;
+}
+// ================== 类型辅助函数 ==================
+bool isIntegerType(const std::string& columnType) {
+    std::string typeUpper = columnType;
+    std::transform(typeUpper.begin(), typeUpper.end(), typeUpper.begin(), ::toupper);
+    return (typeUpper.find("INT") != std::string::npos ||
+        typeUpper == "NUMBER" ||
+        typeUpper == "LONG");
+}
+
+bool isStringType(const std::string& columnType) {
+    std::string typeUpper = columnType;
+    std::transform(typeUpper.begin(), typeUpper.end(), typeUpper.begin(), ::toupper);
+    return (typeUpper.find("CHAR") == 0 ||
+        typeUpper.find("VARCHAR") == 0 ||
+        typeUpper.find("DATE") == 0 ||
+        typeUpper.find("STRING") == 0);
+}
+
+IndexType mapColumnType(const std::string& dbType) {
+    if (isIntegerType(dbType)) return IndexType::INTEGER;
+    else if (isStringType(dbType)) return IndexType::STRING;
+    throw std::runtime_error("Unsupported column type: " + dbType);
+}
+
 // --- 辅助函数实现 ---
 bool isIndexExist(const std::string& table, const std::string& column, const std::string& indexName) {
     std::ifstream metaFile("DATA/INDEX/index_meta.csv");
