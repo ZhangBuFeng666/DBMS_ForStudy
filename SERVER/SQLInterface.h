@@ -44,11 +44,8 @@ public:
     bool drop_table(const std::string& dbName, const std::string& tableName);
     bool alter_table(const SQLCommand& command);
     bool insert_into_table(const std::string& dbName, const std::string& tableName, const std::vector<std::string>& values);
-    bool update_table_row(const std::string& dbName, const std::string& tableName,
-        const std::vector<std::pair<std::string, std::string>>& setClauses,
-        const std::string& whereColumn, const std::string& whereValue);
-    bool delete_table_row(const std::string& dbName, const std::string& tableName,
-        const std::string& whereColumn, const std::string& whereValue);
+    bool update_table_row(const SQLCommand& cmd);
+    bool delete_table_row(const SQLCommand& cmd);
     std::string grant_privilege_sql(const std::string& username, const std::string& privilegeType);
     FileManager& getFileManager() { return fileManager; }
 

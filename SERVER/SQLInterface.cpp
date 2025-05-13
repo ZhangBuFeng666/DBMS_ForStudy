@@ -430,21 +430,27 @@ bool SQLInterface::process_sql_command(const std::string& sql, const std::string
         }
         break;
     case SQLCommand::UPDATE:
-        if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) { result_message = "错误: 无效的 UPDATE 语句。"; success = false; }
-        else { 
-            success = update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue);
-            result_message = success ? "数据更新成功。" : "错误: 更新数据失败。"; 
-            /* TODO: 返回影响行数 */ 
-        }
-        break;
-    case SQLCommand::DELETE_NEW:
-        if (cmd.tableName.empty() || !cmd.hasWhere) {
-            result_message = "错误: 无效的 DELETE 语句。"; success = false;
+        // OLD: if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) {
+        if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere || cmd.whereConditions.conditions.empty()) { // Check new structure
+            result_message = "错误: 无效的 UPDATE 语句 (缺少表名, SET 子句, 或有效 WHERE 子句)。"; success = false;
         }
         else {
-            success = delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue);
+            // OLD: success = update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue);
+            success = update_table_row(cmd); // Pass the whole cmd object
+            result_message = success ? "数据更新成功。" : "错误: 更新数据失败。";
+            // TODO: update_table_row could return number of affected rows
+        }
+        break;
+    case SQLCommand::DELETE_NEW: // Assuming DELETE_NEW is your parsed type for DELETE
+        // OLD: if (cmd.tableName.empty() || !cmd.hasWhere) {
+        if (cmd.tableName.empty() || !cmd.hasWhere || cmd.whereConditions.conditions.empty()) { // Check new structure
+            result_message = "错误: 无效的 DELETE 语句 (缺少表名或有效 WHERE 子句)。"; success = false;
+        }
+        else {
+            // OLD: success = delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue);
+            success = delete_table_row(cmd); // Pass the whole cmd object
             result_message = success ? "数据删除成功。" : "错误: 删除数据失败。";
-            /* TODO: 返回影响行数 */ 
+            // TODO: delete_table_row could return number of affected rows
         }
         break;
     case SQLCommand::ALTER:
@@ -805,9 +811,6 @@ bool SQLInterface::alter_table(const SQLCommand& cmd) {
 } // 结束 alter_table
 
 
-
-
-
 // 修改 SQLInterface::insert_into_table 函数
 bool SQLInterface::insert_into_table(const std::string& dbName, const std::string& tableName, const std::vector<std::string>& values) {
     std::string dataPath = COMMONDATA_ROOT + tableName + ".trd";
@@ -992,9 +995,16 @@ bool SQLInterface::insert_into_table(const std::string& dbName, const std::strin
 //  tableHasData, LoadedColumnConstraints 结构体等已存在且功能正确)
 // 并且 METADATA_DB_ROOT, COMMONDATA_ROOT, fs 命名空间等已正确设置
 
-bool SQLInterface::update_table_row(const std::string& dbName, const std::string& tableName,
-    const std::vector<std::pair<std::string, std::string>>& setClauses,
-    const std::string& whereColumn, const std::string& whereValue) {
+// --- MODIFIED update_table_row ---
+bool SQLInterface::update_table_row(const SQLCommand& cmd) { // Changed signature
+    if (cmd.type != SQLCommand::UPDATE) {
+        std::cerr << "错误: update_table_row 被非 UPDATE 命令调用。" << std::endl;
+        return false;
+    }
+
+    const std::string& dbName = cmd.dbName;
+    const std::string& tableName = cmd.tableName; // Or cmd.fromTable if that's your convention
+    const auto& setClauses = cmd.setClauses;
 
     std::string dataPath = COMMONDATA_ROOT + tableName + ".trd";
     std::string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
@@ -1006,8 +1016,10 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
         return false;
     }
 
-    if (whereColumn.empty()) {
-        std::cerr << "错误: UPDATE 语句需要一个 WHERE 子句。" << std::endl;
+    if (!cmd.hasWhere || cmd.whereConditions.conditions.empty()) { // Check the new structure
+        std::cerr << "错误: UPDATE 语句需要一个有效的 WHERE 子句。" << std::endl;
+        // Depending on your SQL dialect, UPDATE without WHERE might be allowed (updates all rows)
+        // For now, let's assume it's required and conditions are present.
         return false;
     }
 
@@ -1016,111 +1028,57 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
         return false;
     }
 
-    std::vector<std::string> all_column_names = readLinesFromFile(tdfPath); // 使用你已有的 readLinesFromFile
-    std::vector<std::string> all_column_types = readLinesFromFile(ticPath); // 假设类型与列名一一对应
+    std::vector<std::string> all_column_names = readLinesFromFile(tdfPath);
+    std::vector<std::string> all_column_types = readLinesFromFile(ticPath);
 
     if (all_column_names.empty() || all_column_names.size() != all_column_types.size()) {
         std::cerr << "错误: 表元数据文件不一致或为空。" << std::endl;
         return false;
     }
 
+    // Create colNameToIndex map
+    std::map<std::string, int> colNameToIndex;
+    for (size_t i = 0; i < all_column_names.size(); ++i) {
+        colNameToIndex[trim(all_column_names[i])] = static_cast<int>(i);
+    }
+
     // 1. 加载约束信息
     std::map<int, LoadedColumnConstraints> column_constraints = load_column_constraints_from_tid(dbName, tableName, METADATA_DB_ROOT);
-    // 调试
-    std::cout << "DEBUG: Constraints for table " << tableName << ":" << std::endl;
-    for (const auto& pair_constr : column_constraints) {
-        std::cout << "  Col Index " << pair_constr.first << ": PK=" << pair_constr.second.isPrimaryKey
-            << ", NN=" << pair_constr.second.isNotNull
-            << ", UQ=" << pair_constr.second.isUnique << std::endl;
-    }
+
     // 2. 解析 SET 子句，并进行类型和 NOT NULL 约束的初步检查
     std::map<int, std::string> set_column_index_to_new_value;
     for (const auto& set_pair : setClauses) {
         std::string col_to_set_name = trim(set_pair.first);
-        // int col_to_set_index = findColumnIndex(dbName, tableName, col_to_set_name, METADATA_DB_ROOT); // 旧的 findColumnIndex
-        // 改为从已加载的 all_column_names 中查找索引，避免重复文件IO
-        int col_to_set_index = -1;
-        for (size_t i = 0; i < all_column_names.size(); ++i) {
-            if (trim(all_column_names[i]) == col_to_set_name) {
-                col_to_set_index = i;
-                break;
-            }
-        }
-
-        if (col_to_set_index == -1) {
+        if (!colNameToIndex.count(col_to_set_name)) {
             std::cerr << "错误: SET 子句中的列 '" << col_to_set_name << "' 在表 '" << tableName << "' 中不存在。" << std::endl;
             return false;
         }
-        std::string new_value_str = strip_single_quotes(set_pair.second); // 去掉单引号
-        // 原始值，可能包含 'NULL' 字符串或就是空串
+        int col_to_set_index = colNameToIndex.at(col_to_set_name);
+
+        // strip_single_quotes is usually done by parser, but if value comes raw, do it
+        // SQLParser::parse_set_clause should already handle quotes for value.
+        std::string new_value_str = set_pair.second; // Assume parser handled quotes
+        // If not: std::string new_value_str = strip_single_quotes(set_pair.second);
+
         std::string trimmed_new_val = trim(new_value_str);
         bool is_new_value_system_null = (trimmed_new_val.empty() || iequals(trimmed_new_val, "NULL"));
 
-        // --- FIX 1 START: 统一 NOT NULL 对空字符串的处理 ---
         if (column_constraints.count(col_to_set_index) && column_constraints[col_to_set_index].isNotNull) {
-            if (is_new_value_system_null) { // 如果系统认为它是NULL (包括空字符串)
+            if (is_new_value_system_null) {
                 std::cerr << "错误: 更新列 '" << col_to_set_name << "' 失败，该列不允许为空 (NOT NULL constraint violated)。" << std::endl;
                 return false;
             }
         }
-        // --- FIX 1 END ---
 
-        // 类型验证 (如果不是系统NULL)
-        if (!is_new_value_system_null && !validateValueType(all_column_types[col_to_set_index], new_value_str)) { // 使用原始 new_value_str 进行类型验证
+        if (!is_new_value_system_null && !validateValueType(all_column_types[col_to_set_index], new_value_str)) {
             std::cerr << "错误: 为列 '" << col_to_set_name << "' 提供的新值 '" << new_value_str
                 << "' 类型不符合其要求的类型 '" << all_column_types[col_to_set_index] << "'。" << std::endl;
             return false;
         }
-        // 存储处理后的值，系统NULL统一存为空字符串
         set_column_index_to_new_value[col_to_set_index] = is_new_value_system_null ? "" : new_value_str;
     }
 
-    // 3. 准备处理数据文件和WHERE条件
-    // 解析 WHERE 条件和运算符 (这部分逻辑来自你提供的代码，保持不变)
-    int where_col_idx = -1; // 重命名以避免与旧的 whereIndex 混淆
-    for (size_t i = 0; i < all_column_names.size(); ++i) {
-        if (trim(all_column_names[i]) == trim(whereColumn)) {
-            where_col_idx = i;
-            break;
-        }
-    }
-    if (where_col_idx == -1) {
-        std::cerr << "错误: WHERE 列 '" << whereColumn << "' 不存在。" << std::endl;
-        return false;
-    }
-    std::string actualWhereCompareValue = whereValue;
-    std::string whereOperator = "=";
-    // (你提供的解析 whereOperator 和 actualWhereCompareValue 的逻辑...)
-    if (whereValue.size() > 1 && (whereValue[0] == '>' || whereValue[0] == '<' || whereValue[0] == '=')) {
-        if (whereValue.size() > 1 && whereValue[1] == '=') {
-            whereOperator = whereValue.substr(0, 2); actualWhereCompareValue = trim(whereValue.substr(2));
-        }
-        else if (whereValue.size() > 1 && whereValue[0] == '<' && whereValue[1] == '>') {
-            whereOperator = "<>"; actualWhereCompareValue = trim(whereValue.substr(2));
-        }
-        else {
-            whereOperator = whereValue.substr(0, 1); actualWhereCompareValue = trim(whereValue.substr(1));
-        }
-    }
-    else { // 如果没有操作符前缀，则 actualWhereCompareValue 就是 whereValue 本身
-        actualWhereCompareValue = trim(whereValue);
-    }
-
-
-    if (whereOperator != "=" && whereOperator != "<>" && whereOperator != ">" &&
-        whereOperator != ">=" && whereOperator != "<" && whereOperator != "<=") {
-        std::cerr << "错误: 不支持的比较运算符 '" << whereOperator << "'" << std::endl;
-        return false;
-    }
-    std::string where_col_type_str = all_column_types[where_col_idx];
-    if ((whereOperator == ">" || whereOperator == ">=" || whereOperator == "<" || whereOperator == "<=") && (where_col_type_str == "INT")) { // 假设 isIntegerType 辅助函数存在
-
-        std::cerr << "错误: 比较运算符 " << whereOperator << " 仅推荐用于 INT 类型列 (当前列类型: " << where_col_type_str << ")" << std::endl;
-        // return false; // 根据严格程度决定是否报错退出
-    }
-
-
-    // 4. 阶段1: 识别将要被更新的行，并暂存它们更新后的状态
+    // 3. 阶段1: 识别将要被更新的行，并暂存它们更新后的状态
     std::vector<std::string> original_data_lines = readLinesFromFile(dataPath);
     std::vector<std::vector<std::string>> rows_if_updated_candidates;
     std::vector<int> original_line_indices_of_updated_rows;
@@ -1137,38 +1095,39 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
             continue;
         }
 
+        // --- NEW WHERE EVALUATION LOGIC ---
         bool row_matches_where = false;
-        if (where_col_idx < current_row_values.size()) {
-            const std::string& value_to_check_in_db = current_row_values[where_col_idx];
-            // --- 沿用你之前的 WHERE 匹配逻辑 ---
-            bool db_value_is_system_null = (value_to_check_in_db.empty() || iequals(value_to_check_in_db, "NULL"));
-            bool compare_val_is_system_null = (actualWhereCompareValue.empty() || iequals(actualWhereCompareValue, "NULL"));
+        if (cmd.hasWhere && !cmd.whereConditions.conditions.empty()) {
+            row_matches_where = evaluate_single_condition(cmd.whereConditions.conditions[0], current_row_values, colNameToIndex, all_column_types);
+            for (size_t i = 0; i < cmd.whereConditions.logicalOperators.size(); ++i) {
+                if (i + 1 < cmd.whereConditions.conditions.size()) {
+                    bool next_cond_result = evaluate_single_condition(cmd.whereConditions.conditions[i + 1], current_row_values, colNameToIndex, all_column_types);
+                    std::string logical_op_upper = cmd.whereConditions.logicalOperators[i];
+                    std::transform(logical_op_upper.begin(), logical_op_upper.end(), logical_op_upper.begin(), ::toupper);
 
-            if (compare_val_is_system_null) { // WHERE X IS NULL or WHERE X IS NOT NULL (using = or <>)
-                if (whereOperator == "=") row_matches_where = db_value_is_system_null;
-                else if (whereOperator == "<>") row_matches_where = !db_value_is_system_null;
-            }
-            else if (!db_value_is_system_null) { // 数据库中的值不是NULL
-                if (whereOperator == "=") row_matches_where = (value_to_check_in_db == actualWhereCompareValue);
-                else if (whereOperator == "<>") row_matches_where = (value_to_check_in_db != actualWhereCompareValue);
-                else if ((where_col_type_str == "INT")) {
-                    try {
-                        long long val_db = std::stoll(value_to_check_in_db);
-                        long long val_comp = std::stoll(actualWhereCompareValue);
-                        if (whereOperator == ">") row_matches_where = (val_db > val_comp);
-                        else if (whereOperator == ">=") row_matches_where = (val_db >= val_comp);
-                        else if (whereOperator == "<") row_matches_where = (val_db < val_comp);
-                        else if (whereOperator == "<=") row_matches_where = (val_db <= val_comp);
+                    if (logical_op_upper == "AND") {
+                        row_matches_where = row_matches_where && next_cond_result;
                     }
-                    catch (const std::exception&) { /* 转换失败，不匹配 */ }
+                    else if (logical_op_upper == "OR") {
+                        row_matches_where = row_matches_where || next_cond_result;
+                    }
+                    else {
+                        std::cerr << "错误: 未知的逻辑运算符 '" << cmd.whereConditions.logicalOperators[i] << "'" << std::endl;
+                        row_matches_where = false; break;
+                    }
+                }
+                else {
+                    std::cerr << "错误: 逻辑运算符后缺少条件。" << std::endl;
+                    row_matches_where = false; break;
                 }
             }
         }
+        // --- END NEW WHERE EVALUATION LOGIC ---
 
         if (row_matches_where) {
             std::vector<std::string> updated_row_candidate = current_row_values;
             for (const auto& pair_idx_val : set_column_index_to_new_value) {
-                if (pair_idx_val.first < updated_row_candidate.size()) {
+                if (static_cast<size_t>(pair_idx_val.first) < updated_row_candidate.size()) {
                     updated_row_candidate[pair_idx_val.first] = pair_idx_val.second;
                 }
             }
@@ -1177,17 +1136,16 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
         }
     }
 
-    // 5. 阶段2: 对所有数据（包括未更新的行和“更新后”的候选行）进行 UNIQUE 和 PRIMARY KEY 检查
-    // --- FIX 2 START: 确保对所有相关表都能正确执行唯一性检查 ---
-    if (!rows_if_updated_candidates.empty()) { // 只在有行实际要更新时才执行此重量级检查
+    // 4. 阶段2: 对所有数据（包括未更新的行和“更新后”的候选行）进行 UNIQUE 和 PRIMARY KEY 检查
+    if (!rows_if_updated_candidates.empty()) {
         std::vector<std::vector<std::string>> all_data_for_uniqueness_check;
         all_data_for_uniqueness_check.reserve(original_data_lines.size());
 
         size_t next_updated_row_idx = 0;
         for (size_t line_idx = 0; line_idx < original_data_lines.size(); ++line_idx) {
             const std::string& current_line_content = original_data_lines[line_idx];
-            if (current_line_content.empty() && line_idx < original_data_lines.size() - 1) { // 保留空行，除非是最后一行
-                all_data_for_uniqueness_check.push_back({}); // 代表一个空行的数据
+            if (current_line_content.empty() && line_idx < original_data_lines.size() - 1) {
+                all_data_for_uniqueness_check.push_back({});
                 continue;
             }
             if (current_line_content.empty() && line_idx == original_data_lines.size() - 1) continue;
@@ -1195,7 +1153,7 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
 
             bool this_line_was_candidate_for_update = false;
             if (next_updated_row_idx < original_line_indices_of_updated_rows.size() &&
-                original_line_indices_of_updated_rows[next_updated_row_idx] == line_idx) {
+                original_line_indices_of_updated_rows[next_updated_row_idx] == static_cast<int>(line_idx)) { // Cast to int for comparison
                 this_line_was_candidate_for_update = true;
             }
 
@@ -1205,15 +1163,11 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
             }
             else {
                 std::vector<std::string> parsed_original_row = parseCsvRow(current_line_content);
-                if (parsed_original_row.size() == all_column_names.size()) { // 只添加列数正确的行
+                if (parsed_original_row.size() == all_column_names.size()) {
                     all_data_for_uniqueness_check.push_back(parsed_original_row);
                 }
                 else {
-                    // 对于列数不匹配的原始行，它们不会被更新，所以对唯一性检查的影响较小
-                    // 但如果它们本身就违反了唯一性，那是数据本身的问题，UPDATE不应负责修复
-                    // 为了简化，这里可以不把格式错误的行加入 all_data_for_uniqueness_check
-                    // 或者加入空向量表示，然后在下面检查时跳过空向量
-                    all_data_for_uniqueness_check.push_back({}); // 标记为无效行数据
+                    all_data_for_uniqueness_check.push_back({});
                 }
             }
         }
@@ -1221,26 +1175,21 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
         for (size_t col_idx_to_check = 0; col_idx_to_check < all_column_names.size(); ++col_idx_to_check) {
             if (column_constraints.count(col_idx_to_check) &&
                 (column_constraints.at(col_idx_to_check).isUnique || column_constraints.at(col_idx_to_check).isPrimaryKey)) {
-
                 std::map<std::string, int> value_counts;
                 for (const auto& row_data_vec : all_data_for_uniqueness_check) {
-                    if (row_data_vec.empty() || col_idx_to_check >= row_data_vec.size()) { // 跳过空行数据或列索引越界
+                    if (row_data_vec.empty() || col_idx_to_check >= row_data_vec.size()) {
                         continue;
                     }
                     const std::string& val_in_col = row_data_vec[col_idx_to_check];
-                    // 系统NULL（空字符串）对于UNIQUE约束可以重复，但对于PRIMARY KEY不行（已被NOT NULL覆盖）
                     bool is_val_system_null_for_unique_check = val_in_col.empty();
 
                     if (column_constraints.at(col_idx_to_check).isUnique &&
-                        !column_constraints.at(col_idx_to_check).isPrimaryKey && // 如果只是UNIQUE而不是PK
+                        !column_constraints.at(col_idx_to_check).isPrimaryKey &&
                         is_val_system_null_for_unique_check) {
                         continue;
                     }
-                    // 对于主键，空字符串（即系统NULL）是不允许的，这个应该由NOT NULL检查阶段处理。
-                    // 但为防万一，如果到了这里值仍是空串且是主键，value_counts会统计它。
                     value_counts[val_in_col]++;
                 }
-
                 for (const auto& pair_val_count : value_counts) {
                     if (pair_val_count.second > 1) {
                         std::string constraint_type_str = column_constraints.at(col_idx_to_check).isPrimaryKey ? "PRIMARY KEY" : "UNIQUE";
@@ -1252,10 +1201,8 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
             }
         }
     }
-    // --- FIX 2 END ---
 
-
-    // 6. 阶段3: 所有检查通过，实际构造新文件内容
+    // 5. 阶段3: 所有检查通过，实际构造新文件内容
     std::vector<std::string> new_file_lines;
     new_file_lines.reserve(original_data_lines.size());
     int updated_rows_count = 0;
@@ -1264,7 +1211,7 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
     for (size_t line_idx = 0; line_idx < original_data_lines.size(); ++line_idx) {
         bool was_this_line_updated = false;
         if (current_updated_candidate_idx < original_line_indices_of_updated_rows.size() &&
-            original_line_indices_of_updated_rows[current_updated_candidate_idx] == line_idx) {
+            original_line_indices_of_updated_rows[current_updated_candidate_idx] == static_cast<int>(line_idx)) { // Cast to int for comparison
             was_this_line_updated = true;
         }
 
@@ -1274,11 +1221,11 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
             current_updated_candidate_idx++;
         }
         else {
-            new_file_lines.push_back(original_data_lines[line_idx]); // 原样保留未匹配或格式错误的行
+            new_file_lines.push_back(original_data_lines[line_idx]);
         }
     }
 
-    // 7. 文件操作（写回）
+    // 6. 文件操作（写回）
     std::string tempPath = dataPath + ".tmp";
     if (!writeLinesToFile(tempPath, new_file_lines)) {
         std::cerr << "错误: 写入更新数据到临时文件失败。" << std::endl;
@@ -1497,26 +1444,120 @@ bool SQLInterface::update_table_row(const std::string& dbName, const std::string
 //    cout << "更新成功。更新了 " << updatedRows << " 行。" << endl;
 //    return true;
 //}
-bool SQLInterface::delete_table_row(const string& dbName, const string& tableName,
-    const string& whereColumn, const string& whereValue) { /* ... 实现 ... */
-    string dataPath = COMMONDATA_ROOT + tableName + ".trd"; 
-    string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/"; string tdfPath = metaDir + tableName + ".tdf";
-    if (whereColumn.empty()) { cerr << "错误: DELETE 语句当前需要一个 'WHERE 字段 = 值' 子句。" << endl; return false; } 
-    if (!fs::exists(dataPath) || !fs::exists(tdfPath)) { cerr << "错误: 表 '" << tableName << "' 的数据或元数据文件 (.trd, .tdf) 未找到。" << endl; return false; }
-    auto columns = readLinesFromFile(tdfPath); if (columns.empty()) { cerr << "错误: 无法读取表 '" << tableName << "' 的列定义 (.tdf)。" << endl; return false; }
-    int whereIndex = findColumnIndex(dbName, tableName, whereColumn, METADATA_DB_ROOT); 
-    if (whereIndex == -1) { cerr << "错误: WHERE 子句中的列 '" << whereColumn << "' 在表 '" << tableName << "' 中未找到。" << endl; return false; }
-    string tempPath = dataPath + ".tmp"; 
-    vector<string> lines = readLinesFromFile(dataPath); vector<string> newLines; 
-    newLines.reserve(lines.size()); 
-    int deletedRows = 0; int lineNum = 0;
-    for (const string& line : lines) { lineNum++; if (line.empty()) continue; vector<string> values = parseCsvRow(line); if (values.size() != columns.size()) { cerr << "警告 (行 " << lineNum << "): DELETE 时行数据列数 (" << values.size() << ") 与表定义 (" << columns.size() << ") 不符，保留该行: " << line << endl; newLines.push_back(line); continue; } bool match = false; if (whereIndex < values.size()) { if (values[whereIndex] == whereValue) { match = true; } } else { cerr << "警告 (行 " << lineNum << "): WHERE 列索引 " << whereIndex << " 超出范围，保留该行。" << endl; newLines.push_back(line); continue; } if (match) { deletedRows++; } else { newLines.push_back(line); } }
-    if (!writeLinesToFile(tempPath, newLines)) { cerr << "错误: 写入更新后的数据到临时文件失败。" << endl; fs::remove(tempPath); return false; } error_code ec; 
-    fs::remove(dataPath, ec); if (ec && ec != errc::no_such_file_or_directory) { cerr << "错误: 删除旧数据文件失败: " << ec.message() << endl; fs::remove(tempPath); return false; } 
-    fs::rename(tempPath, dataPath, ec); if (ec) { cerr << "错误: 重命名临时数据文件失败: " << ec.message() << endl; return false; }
-    cout << "删除成功。共有 " << deletedRows << " 行受到影响。" << endl; return true;
-}
+// --- MODIFIED delete_table_row ---
+bool SQLInterface::delete_table_row(const SQLCommand& cmd) { // Changed signature
+    if (cmd.type != SQLCommand::DELETE_NEW) { // Assuming DELETE_NEW is your parsed type
+        std::cerr << "错误: delete_table_row 被非 DELETE 命令调用。" << std::endl;
+        return false;
+    }
 
+    const std::string& dbName = cmd.dbName;
+    const std::string& tableName = cmd.tableName; // Or cmd.fromTable
+
+    std::string dataPath = COMMONDATA_ROOT + tableName + ".trd";
+    std::string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
+    std::string tdfPath = metaDir + tableName + ".tdf";
+    std::string ticPath = metaDir + tableName + ".tic"; // Need types for evaluate_single_condition
+
+    if (!cmd.hasWhere || cmd.whereConditions.conditions.empty()) {
+        std::cerr << "错误: DELETE 语句当前需要一个有效的 WHERE 子句。" << std::endl;
+        // Depending on SQL dialect, DELETE without WHERE might delete all rows.
+        // For now, assume WHERE is required.
+        return false;
+    }
+    if (!fs::exists(dataPath) || !fs::exists(tdfPath) || !fs::exists(ticPath)) {
+        std::cerr << "错误: 表 '" << tableName << "' 的数据或元数据文件 (.trd, .tdf, .tic) 未找到。" << std::endl;
+        return false;
+    }
+
+    std::vector<std::string> all_column_names = readLinesFromFile(tdfPath);
+    std::vector<std::string> all_column_types = readLinesFromFile(ticPath);
+
+    if (all_column_names.empty() || all_column_names.size() != all_column_types.size()) {
+        std::cerr << "错误: 无法读取表 '" << tableName << "' 的列定义或类型不匹配。" << std::endl;
+        return false;
+    }
+
+    // Create colNameToIndex map
+    std::map<std::string, int> colNameToIndex;
+    for (size_t i = 0; i < all_column_names.size(); ++i) {
+        colNameToIndex[trim(all_column_names[i])] = static_cast<int>(i);
+    }
+
+    std::string tempPath = dataPath + ".tmp";
+    std::vector<std::string> lines = readLinesFromFile(dataPath);
+    std::vector<std::string> newLines;
+    newLines.reserve(lines.size());
+    int deletedRows = 0;
+    int lineNum = 0;
+
+    for (const std::string& line : lines) {
+        lineNum++;
+        if (line.empty()) continue;
+        std::vector<std::string> current_row_values = parseCsvRow(line);
+        if (current_row_values.size() != all_column_names.size()) {
+            std::cerr << "警告 (行 " << lineNum << "): DELETE 时行数据列数 (" << current_row_values.size()
+                << ") 与表定义 (" << all_column_names.size() << ") 不符，保留该行: " << line << std::endl;
+            newLines.push_back(line);
+            continue;
+        }
+
+        // --- NEW WHERE EVALUATION LOGIC ---
+        bool row_matches_where = false;
+        // Assuming cmd.hasWhere is true and conditions are not empty due to earlier check
+        row_matches_where = evaluate_single_condition(cmd.whereConditions.conditions[0], current_row_values, colNameToIndex, all_column_types);
+        for (size_t i = 0; i < cmd.whereConditions.logicalOperators.size(); ++i) {
+            if (i + 1 < cmd.whereConditions.conditions.size()) {
+                bool next_cond_result = evaluate_single_condition(cmd.whereConditions.conditions[i + 1], current_row_values, colNameToIndex, all_column_types);
+                std::string logical_op_upper = cmd.whereConditions.logicalOperators[i];
+                std::transform(logical_op_upper.begin(), logical_op_upper.end(), logical_op_upper.begin(), ::toupper);
+
+                if (logical_op_upper == "AND") {
+                    row_matches_where = row_matches_where && next_cond_result;
+                }
+                else if (logical_op_upper == "OR") {
+                    row_matches_where = row_matches_where || next_cond_result;
+                }
+                else {
+                    std::cerr << "错误: 未知的逻辑运算符 '" << cmd.whereConditions.logicalOperators[i] << "'" << std::endl;
+                    row_matches_where = false; break;
+                }
+            }
+            else {
+                std::cerr << "错误: 逻辑运算符后缺少条件。" << std::endl;
+                row_matches_where = false; break;
+            }
+        }
+        // --- END NEW WHERE EVALUATION LOGIC ---
+
+        if (row_matches_where) {
+            deletedRows++;
+        }
+        else {
+            newLines.push_back(line);
+        }
+    }
+
+    if (!writeLinesToFile(tempPath, newLines)) {
+        std::cerr << "错误: 写入更新后的数据到临时文件失败。" << std::endl;
+        fs::remove(tempPath);
+        return false;
+    }
+    error_code ec;
+    fs::remove(dataPath, ec);
+    if (ec && ec != std::errc::no_such_file_or_directory) {
+        std::cerr << "错误: 删除旧数据文件失败: " << ec.message() << std::endl;
+        fs::remove(tempPath);
+        return false;
+    }
+    fs::rename(tempPath, dataPath, ec);
+    if (ec) {
+        std::cerr << "错误: 重命名临时数据文件失败: " << ec.message() << std::endl;
+        return false;
+    }
+    std::cout << "删除成功。共有 " << deletedRows << " 行受到影响。" << std::endl;
+    return true;
+}
 // --- 权限管理 (示例) (保持不变) ---
 string SQLInterface::grant_privilege_sql(const string& username, const string& privilegeType) {
     return "GRANT " + privilegeType + " TO " + username + ";";

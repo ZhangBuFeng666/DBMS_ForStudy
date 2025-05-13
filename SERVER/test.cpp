@@ -193,12 +193,12 @@ bool process_sql(const string& sql,
         }
         case SQLCommand::UPDATE: {
             if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) { cerr << "错误: 无效的 UPDATE 语句 (缺少表名、SET 或 WHERE 子句)。" << endl; success = false; } // 确保 hasWhere 为 true
-            else { cout << "尝试更新表 '" << cmd.tableName << "' 中 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; /* ... (打印 SET 子句) ... */ success = db.update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue); }
+            else { cout << "尝试更新表 '" << cmd.tableName << "' 中 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; /* ... (打印 SET 子句) ... */ success = db.update_table_row(cmd); }
             break;
         }
         case SQLCommand::DELETE_NEW: {
             if (cmd.tableName.empty() || !cmd.hasWhere) { cerr << "错误: 无效的 DELETE 语句 (缺少表名或 WHERE 子句)。" << endl; success = false; } // 确保 hasWhere 为 true
-            else { cout << "尝试从表 '" << cmd.tableName << "' 中删除 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; success = db.delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue); }
+            else { cout << "尝试从表 '" << cmd.tableName << "' 中删除 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; success = db.delete_table_row(cmd); }
             break;
         }
         case SQLCommand::ALTER: {
@@ -381,64 +381,68 @@ void run_constraint_tests() {
     process_sql("SELECT * FROM employees join departments on employees.dept_id = departments.dept_id;", db, parser, currentDbName);
     process_sql("SELECT * FROM employees join departments on employees.dept_id = departments.dept_id where departments.dept_id > 101;", db, parser, currentDbName);
     process_sql("SELECT * FROM employees join departments on employees.dept_id > departments.dept_id where departments.dept_id > 101;", db, parser, currentDbName);
-    //// === 3. 测试 UPDATE 与约束 ===
-    //std::cout << "\n--- 3. 测试 UPDATE 与约束 (表: employees) ---" << std::endl;
-    //// 3.1 成功更新 (不违反约束)
-    //process_sql("UPDATE employees SET salary = 65000 WHERE eid = 2;", db, parser, currentDbName); // Bob's salary to 65000
-    //// 预期: 成功
-    //process_sql("UPDATE employees SET dept_id = 102 WHERE ename = 'Alice';", db, parser, currentDbName); // Alice to dept 102
-    //// 预期: 成功
-    //process_sql("SELECT * FROM employees;", db, parser, currentDbName);
+    process_sql("SELECT dept_id,dept_name FROM employees join departments on employees.dept_id = departments.dept_id where departments.dept_id = 101 or departments.dept_id = 103;", db, parser, currentDbName);
 
-    //// 3.2 更新导致主键冲突 (尝试将 Bob(eid=2) 的 eid 改为 Alice(eid=1) 的 eid)
-    //process_sql("UPDATE employees SET eid = 1 WHERE eid = 2;", db, parser, currentDbName);
-    //// 预期: 失败 (错误: 更新操作会导致列 'eid' 的值 '1' 重复，违反了 PRIMARY KEY 约束。)
+    // === 3. 测试 UPDATE 与约束 ===
+    std::cout << "\n--- 3. 测试 UPDATE 与约束 (表: employees) ---" << std::endl;
+    process_sql("SELECT * FROM employees;", db, parser, currentDbName);
+    // 3.1 成功更新 (不违反约束)
+    process_sql("UPDATE employees SET salary = 65000 WHERE eid = 2;", db, parser, currentDbName); // Bob's salary to 65000
+    // 预期: 成功
+    process_sql("SELECT * FROM employees;", db, parser, currentDbName);
+    process_sql("UPDATE employees SET dept_id = 102 WHERE ename = 'Alice';", db, parser, currentDbName); // Alice to dept 102
+    // 预期: 成功
+    process_sql("SELECT * FROM employees;", db, parser, currentDbName);
 
-    //// 3.3 更新导致违反非空约束 (尝试将 Alice(ename='Alice') 的 ename 改为 NULL)
-    //process_sql("UPDATE employees SET ename = NULL WHERE eid = 1;", db, parser, currentDbName);
-    //// 预期: 失败 (错误: 更新列 'ename' 失败，该列不允许为空 (NOT NULL constraint violated)。)
-    //process_sql("UPDATE employees SET ename = '' WHERE eid = 1;", db, parser, currentDbName);
-    //// 预期: 失败 (错误: 更新列 'ename' 失败，该列不允许为空 (NOT NULL constraint violated)。)
+    // 3.2 更新导致主键冲突 (尝试将 Bob(eid=2) 的 eid 改为 Alice(eid=1) 的 eid)
+    process_sql("UPDATE employees SET eid = 1 WHERE eid = 2;", db, parser, currentDbName);
+    // 预期: 失败 (错误: 更新操作会导致列 'eid' 的值 '1' 重复，违反了 PRIMARY KEY 约束。)
 
-    //// 3.4 更新导致唯一约束冲突 (尝试将 Alice(eid=1, salary=50000) 的 salary 改为 Bob(eid=2, salary=65000) 的当前 salary)
-    //// 先插入一个有确定唯一值的行
-    //process_sql("INSERT INTO employees VALUES (7, 'Grace', 107, 80000);", db, parser, currentDbName); // Grace, salary 80000
-    //process_sql("UPDATE employees SET salary = 80000 WHERE eid = 1;", db, parser, currentDbName); // Alice's salary to 80000 (Grace's salary)
-    //// 预期: 失败 (错误: 更新操作会导致列 'salary' 的值 '80000' 重复，违反了 UNIQUE 约束。)
+    // 3.3 更新导致违反非空约束 (尝试将 Alice(ename='Alice') 的 ename 改为 NULL)
+    process_sql("UPDATE employees SET ename = NULL WHERE eid = 1;", db, parser, currentDbName);
+    // 预期: 失败 (错误: 更新列 'ename' 失败，该列不允许为空 (NOT NULL constraint violated)。)
+    process_sql("UPDATE employees SET ename = '' WHERE eid = 1;", db, parser, currentDbName);
+    // 预期: 失败 (错误: 更新列 'ename' 失败，该列不允许为空 (NOT NULL constraint violated)。)
 
-    //// 3.5 更新 UNIQUE 列为 NULL (应该允许，即使其他行该列也为NULL)
-    //process_sql("UPDATE employees SET salary = NULL WHERE eid = 7;", db, parser, currentDbName); // Grace's salary to NULL
-    //// 预期: 成功 (现在 Carol, David, Grace 的 salary 都是 NULL)
-    //process_sql("SELECT * FROM employees;", db, parser, currentDbName);
+    // 3.4 更新导致唯一约束冲突 (尝试将 Alice(eid=1, salary=50000) 的 salary 改为 Bob(eid=2, salary=65000) 的当前 salary)
+    // 先插入一个有确定唯一值的行
+    process_sql("INSERT INTO employees VALUES (7, 'Grace', 107, 80000);", db, parser, currentDbName); // Grace, salary 80000
+    process_sql("UPDATE employees SET salary = 80000 WHERE eid = 1;", db, parser, currentDbName); // Alice's salary to 80000 (Grace's salary)
+    // 预期: 失败 (错误: 更新操作会导致列 'salary' 的值 '80000' 重复，违反了 UNIQUE 约束。)
 
-    //// 3.6 更新主键列为一个新的唯一值 (应该成功)
-    //process_sql("UPDATE employees SET eid = 10 WHERE eid = 1;", db, parser, currentDbName); // Alice's eid from 1 to 10
-    //// 预期: 成功
-    //process_sql("SELECT * FROM employees join departments on departments.dept_id = employees.dept_id WHERE eid = 10 ;", db, parser, currentDbName);
+    // 3.5 更新 UNIQUE 列为 NULL (应该允许，即使其他行该列也为NULL)
+    process_sql("UPDATE employees SET salary = NULL WHERE eid = 7;", db, parser, currentDbName); // Grace's salary to NULL
+    // 预期: 成功 (现在 Carol, David, Grace 的 salary 都是 NULL)
+    process_sql("SELECT * FROM employees;", db, parser, currentDbName);
+
+    // 3.6 更新主键列为一个新的唯一值 (应该成功)
+    process_sql("UPDATE employees SET eid = 10 WHERE eid = 1;", db, parser, currentDbName); // Alice's eid from 1 to 10
+    // 预期: 成功
+    process_sql("SELECT * FROM employees join departments on departments.dept_id = employees.dept_id WHERE eid = 10 ;", db, parser, currentDbName);
 
 
-    //// === 4. 测试 ALTER TABLE DROP COLUMN 与约束 ===
-    //std::cout << "\n--- 4. 测试 ALTER TABLE DROP COLUMN 与约束 (表: employees) ---" << std::endl;
-    //// 4.1 尝试删除主键列
-    //process_sql("ALTER TABLE employees DROP COLUMN eid;", db, parser, currentDbName);
-    //// 预期: 失败 (错误: 无法删除列 'eid'，因为它是主键的一部分。)
+    // === 4. 测试 ALTER TABLE DROP COLUMN 与约束 ===
+    std::cout << "\n--- 4. 测试 ALTER TABLE DROP COLUMN 与约束 (表: employees) ---" << std::endl;
+    // 4.1 尝试删除主键列
+    process_sql("ALTER TABLE employees DROP COLUMN eid;", db, parser, currentDbName);
+    // 预期: 失败 (错误: 无法删除列 'eid'，因为它是主键的一部分。)
 
-    //// 4.2 尝试删除带 NOT NULL 约束的列 (非主键)
-    //process_sql("ALTER TABLE employees DROP COLUMN ename;", db, parser, currentDbName);
-    //// 预期: 成功 (因为我们没有阻止删除带NOT NULL的非主键列，但.tid中与ename的not_null约束应被移除)
-    //// 验证：后续插入时，新表结构中不再有 ename，或者如果模拟了占位符，则该占位符可为NULL
+    // 4.2 尝试删除带 NOT NULL 约束的列 (非主键)
+    process_sql("ALTER TABLE employees DROP COLUMN ename;", db, parser, currentDbName);
+    // 预期: 成功 (因为我们没有阻止删除带NOT NULL的非主键列，但.tid中与ename的not_null约束应被移除)
+    // 验证：后续插入时，新表结构中不再有 ename，或者如果模拟了占位符，则该占位符可为NULL
 
-    //// 4.3 尝试删除带 UNIQUE 约束的列 (非主键)
-    //process_sql("ALTER TABLE employees DROP COLUMN salary;", db, parser, currentDbName);
-    //// 预期: 成功 (.tid中与salary的unique约束应被移除)
+    // 4.3 尝试删除带 UNIQUE 约束的列 (非主键)
+    process_sql("ALTER TABLE employees DROP COLUMN salary;", db, parser, currentDbName);
+    // 预期: 成功 (.tid中与salary的unique约束应被移除)
 
-    //// 查看 employees 表结构是否变化 (例如通过 print_metadata 或尝试查询已删除的列)
-    //// print_metadata(currentDbName, "employees", db); // 如果存在
-    //process_sql("SELECT dept_id FROM employees;", db, parser, currentDbName); // 应该只剩下 dept_id 和 eid(如果4.1失败)
-    //// 重新创建 employees 用于后续测试（如果需要）或使用新表
-    //process_sql("DROP TABLE employees;", db, parser, currentDbName);
-    //process_sql("CREATE TABLE employees (eid INT PRIMARY KEY, ename CHAR(50) NOT NULL, dept_id INT, salary INT UNIQUE);", db, parser, currentDbName);
-    //process_sql("INSERT INTO employees VALUES (1001, 'TestUser', 200, 10000);", db, parser, currentDbName);
+    // 查看 employees 表结构是否变化 (例如通过 print_metadata 或尝试查询已删除的列)
+    // print_metadata(currentDbName, "employees", db); // 如果存在
+    process_sql("SELECT dept_id FROM employees;", db, parser, currentDbName); // 应该只剩下 dept_id 和 eid(如果4.1失败)
+    // 重新创建 employees 用于后续测试（如果需要）或使用新表
+    process_sql("DROP TABLE employees;", db, parser, currentDbName);
+    process_sql("CREATE TABLE employees (eid INT PRIMARY KEY, ename CHAR(50) NOT NULL, dept_id INT, salary INT UNIQUE);", db, parser, currentDbName);
+    process_sql("INSERT INTO employees VALUES (1001, 'TestUser', 200, 10000);", db, parser, currentDbName);
 
 
     //// === 5. 更多边界情况和组合 ===
