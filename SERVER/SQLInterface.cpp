@@ -22,6 +22,100 @@ namespace fs = std::filesystem; // 文件系统命名空间别名
 
 // === 内部辅助函数 (放在匿名命名空间中，限制作用域) ===
 namespace {
+    bool iequals(const string& a, const string& b) {
+        return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+            [](char a, char b) { return tolower(a) == tolower(b); });
+    }
+    //5.2_________________________________________
+    
+    //——————————————————————————————
+    // (colNameToIndex 和 columnTypes 应对应于 currentRowValues 的表结构)
+    bool evaluate_single_condition(const SQLCommand::Condition& cond,
+        const std::vector<std::string>& currentRowValues,
+        const std::map<std::string, int>& colNameToIndex,
+        const std::vector<std::string>& columnTypes // 列类型，用于类型转换比较
+    ) {
+        if (!colNameToIndex.count(cond.columnName)) {
+            std::cerr << "错误: WHERE 条件中的列 '" << cond.columnName << "' 未找到。" << std::endl;
+            return false;
+        }
+        int colIdx = colNameToIndex.at(cond.columnName);
+
+        if (static_cast<size_t>(colIdx) >= currentRowValues.size() || static_cast<size_t>(colIdx) >= columnTypes.size()) {
+            std::cerr << "错误: WHERE 条件列索引越界。" << std::endl;
+            return false;
+        }
+
+        const std::string& dbValueStr = currentRowValues[colIdx];
+        const std::string& colType = columnTypes[colIdx];
+
+        if (cond.useIsNullClause) {
+            bool dbValueIsNull = dbValueStr.empty() || iequals(dbValueStr, "NULL");
+            return cond.isNotNull ? !dbValueIsNull : dbValueIsNull;
+        }
+
+        if (cond.useInClause) {
+            bool dbValueIsNull = dbValueStr.empty() || iequals(dbValueStr, "NULL");
+            if (dbValueIsNull) return false; // NULL不匹配IN列表中的任何值
+
+            for (const std::string& inVal : cond.inValues) {
+                // 假设IN列表中的值也需要根据列类型进行比较
+                // 为简单起见，这里直接字符串比较，但理想情况下应进行类型转换
+                if (dbValueStr == (inVal.empty() && iequals(inVal, "NULL") ? "" : inVal)) { // 处理IN ('val1', NULL) 的情况
+                    return true; // 如果匹配到IN列表中的任何一个值
+                }
+            }
+            return false; // 未匹配到IN列表中的任何值
+        }
+
+        // 常规比较
+        std::string compareValueStr = cond.value; // 解析时已去除引号
+
+        // 处理NULL比较 (标准SQL中，与NULL的常规比较结果是UNKNOWN，通常视为FALSE)
+        bool dbValueIsActualNull = dbValueStr.empty(); // 假设内部用空串表示NULL
+        bool compareValueIsActualNull = compareValueStr.empty() && !cond.isValueQuoted; // 只有非引号的空才是NULL
+
+        if (dbValueIsActualNull || compareValueIsActualNull) {
+            // 对于 =, 如果两边都是NULL，可以认为不匹配 (SQL标准行为) 或匹配 (取决于你的定义)
+            // 对于 <>, 如果一边是NULL，一边不是，则匹配 (SQL标准行为)
+            // 其他运算符与NULL比较通常不匹配
+            if (cond.op == "=") return dbValueIsActualNull && compareValueIsActualNull; // 只有都为NULL才视为相等 (一种解释)
+            if (cond.op == "<>" || cond.op == "!=") return !(dbValueIsActualNull && compareValueIsActualNull); // 只有都不为NULL才视为不等 (一种解释)
+            return false; // 其他比较与NULL通常为false
+        }
+
+        // 类型感知的比较
+        if (colType == "INT") {
+            try {
+                long long dbNum = std::stoll(dbValueStr);
+                long long compareNum = std::stoll(compareValueStr);
+                if (cond.op == "=") return dbNum == compareNum;
+                if (cond.op == "<>" || cond.op == "!=") return dbNum != compareNum;
+                if (cond.op == ">") return dbNum > compareNum;
+                if (cond.op == "<") return dbNum < compareNum;
+                if (cond.op == ">=") return dbNum >= compareNum;
+                if (cond.op == "<=") return dbNum <= compareNum;
+            }
+            catch (const std::exception& e) {
+                std::cerr << "警告: INT 类型转换或比较失败: " << e.what() << std::endl;
+                return false; // 转换失败则不匹配
+            }
+        }
+        // else if (colType == "FLOAT") { /* ... 类似处理 ... */ }
+        // else if (colType == "DATE") { /* ... 类似处理 ... */ }
+        else { // 默认为字符串比较 (CHAR, etc.)
+            if (cond.op == "=") return dbValueStr == compareValueStr;
+            if (cond.op == "<>" || cond.op == "!=") return dbValueStr != compareValueStr;
+            if (cond.op == ">") return dbValueStr > compareValueStr;
+            if (cond.op == "<") return dbValueStr < compareValueStr;
+            if (cond.op == ">=") return dbValueStr >= compareValueStr;
+            if (cond.op == "<=") return dbValueStr <= compareValueStr;
+        }
+
+        std::cerr << "错误: 未知的比较运算符 '" << cond.op << "' 或未处理的类型组合。" << std::endl;
+        return false;
+    }
+    //————————————————————————————
     std::string strip_single_quotes(const std::string& s) {
         // 检查字符串长度是否至少为2 (一个开头引号，一个结尾引号)
         if (s.length() >= 2) {
@@ -97,11 +191,7 @@ namespace {
         return all_column_constraints;
     }
 
-    bool iequals(const string& a, const string& b) {
-        return std::equal(a.begin(), a.end(), b.begin(), b.end(),
-            [](char a, char b) { return tolower(a) == tolower(b); });
-    }
-    //5.2_________________________________________
+    
 
 
     bool writeLinesToFile(const string& filepath, const vector<string>& lines) {
@@ -1779,6 +1869,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         // joinedColNameToIndex 将同时支持 table.column 和 column (如果非限定名不冲突)
         std::map<std::string, int> joinedColNameToIndex;
         std::vector<std::string> qualifiedJoinedAllColumns;
+        std::vector<std::string> joinedAllTypes; // **新增**: 存储合并后列的类型
         int currentCombinedIdx = 0;
 
         for (size_t i = 0; i < allColumns1.size(); ++i) {
@@ -1787,13 +1878,18 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
 
             qualifiedJoinedAllColumns.push_back(qualifiedColName);
             joinedColNameToIndex[qualifiedColName] = currentCombinedIdx;
-            // 如果简单列名没有冲突，也加入map
             if (joinedColNameToIndex.find(simpleColName) == joinedColNameToIndex.end()) {
                 joinedColNameToIndex[simpleColName] = currentCombinedIdx;
             }
-            else { // 如果简单列名已存在 (意味着表2中也有同名单列，此时简单名将有歧义)
-                // 我们可以在这里标记该简单名为歧义，或者移除它，强制使用限定名
-           // joinedColNameToIndex.erase(simpleColName); // 一种处理方式：移除歧义的简单名
+            else {
+                // 存在同名列，简单列名有歧义，可以考虑移除简单列名映射
+                // joinedColNameToIndex.erase(simpleColName); // 或者标记为歧义
+            }
+            if (i < allTypes1.size()) { // **新增**: 添加类型信息
+                joinedAllTypes.push_back(trim(allTypes1[i]));
+            }
+            else {
+                joinedAllTypes.push_back("UNKNOWN_TYPE"); // 或者抛出错误
             }
             currentCombinedIdx++;
         }
@@ -1803,103 +1899,74 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
 
             qualifiedJoinedAllColumns.push_back(qualifiedColName);
             joinedColNameToIndex[qualifiedColName] = currentCombinedIdx;
-            if (joinedColNameToIndex.find(simpleColName) == joinedColNameToIndex.end()) {
+            // 如果简单列名已存在（来自表1），并且现在表2也有同名列，则此简单列名有歧义
+            if (joinedColNameToIndex.count(simpleColName) && joinedColNameToIndex[simpleColName] < allColumns1.size()) {
+                // 之前表1的简单列名映射现在有歧义了，可以移除它，强制使用限定名
+                // joinedColNameToIndex.erase(simpleColName); // 移除歧义的简单名
+                // 或者，如果 WHERE 子句中使用了简单列名，并且它是歧义的，应该报错
+            }
+            else if (!joinedColNameToIndex.count(simpleColName)) {
                 joinedColNameToIndex[simpleColName] = currentCombinedIdx;
             }
+            if (i < allTypes2.size()) { // **新增**: 添加类型信息
+                joinedAllTypes.push_back(trim(allTypes2[i]));
+            }
             else {
-                // 如果 cmd.selectColumns 或 WHERE/ORDER BY 中使用了这个冲突的简单列名，
-                // 后续查找 joinedColNameToIndex[simpleColName] 可能会得到 table1 的列。
-                // 这是需要小心处理的歧义点。更安全的做法是，如果冲突，则不插入简单名，
-                // 或者让用户必须使用限定名。
-                // 考虑如果存在冲突，则删除之前可能存在的简单名映射，强制用户使用限定名
-                if (joinedColNameToIndex[simpleColName] < allColumns1.size()) { // 检查之前的简单名是否来自表1
-                    // 存在冲突，之前添加的 simpleColName (来自表1) 现在有歧义了
-                    // 可以选择移除，或标记为歧义
-                    // For now, let qualified names be the primary way to resolve
-                }
+                joinedAllTypes.push_back("UNKNOWN_TYPE");
             }
             currentCombinedIdx++;
         }
         std::cout << "调试: 合并后元数据构建完成。总列数: " << qualifiedJoinedAllColumns.size() << std::endl;
 
 
+        
+
         // 5. 应用 WHERE 子句
         std::vector<std::vector<std::string>> filteredJoinedRows;
         if (cmd.hasWhere) {
-            std::cout << "调试: 应用 WHERE 子句: " << cmd.whereColumn << " " << cmd.whereOperator << " " << cmd.whereValue << std::endl;
-            std::pair<std::string, std::string> whereColParts = parseQualifiedColumn(cmd.whereColumn, ""); // 尝试解析表名和列名
-            std::string effectiveWhereColKeyToLookup = cmd.whereColumn; // 默认使用用户给的
-            if (!whereColParts.first.empty()) { // 如果用户提供了 table.column
-                effectiveWhereColKeyToLookup = whereColParts.first + "." + whereColParts.second;
-            }
-            // 如果用户只提供了 column，并且它在 joinedColNameToIndex 中没有歧义，那么也能找到
+            // 调试输出 WHERE 条件
+            // std::cout << "调试: 应用 WHERE 子句条件数: " << cmd.whereConditions.conditions.size() << std::endl;
+            // if (!cmd.whereConditions.conditions.empty()) {
+            //     std::cout << "调试: 第一个WHERE条件列: '" << cmd.whereConditions.conditions[0].columnName
+            //               << "', 操作符: '" << cmd.whereConditions.conditions[0].op
+            //               << "', 值: '" << cmd.whereConditions.conditions[0].value << "'" << std::endl;
+            // }
 
-            int whereColIdxInJoined = -1;
-            if (joinedColNameToIndex.count(effectiveWhereColKeyToLookup)) {
-                whereColIdxInJoined = joinedColNameToIndex[effectiveWhereColKeyToLookup];
-                std::cout << "调试: WHERE 列 '" << effectiveWhereColKeyToLookup << "' 在合并结果中的索引为: " << whereColIdxInJoined << std::endl;
-            }
-            else {
-                result.success = false;
-                result.errorMessage = "错误: WHERE 子句中的列 '" + cmd.whereColumn + "' 在连接结果中未找到或存在歧义。";
-                std::cerr << result.errorMessage << std::endl;
-                return result;
-            }
+            for (const auto& joined_row_values : joinedRawRows) { // joinedRawRows 是 JOIN 操作的结果
+                if (joined_row_values.empty()) continue;
 
-            for (const auto& row : joinedRawRows) {
-                if (whereColIdxInJoined < 0 || static_cast<size_t>(whereColIdxInJoined) >= row.size()) {
-                    std::cerr << "警告: WHERE 列索引 " << whereColIdxInJoined << " 对于某行无效，跳过。" << std::endl;
-                    continue;
-                }
-                // 使用您在单表查询中已有的 WHERE 判断逻辑
-                // 这里是一个简化的版本，您需要替换成您完整的 WHERE 判断逻辑
-                bool keepRow = true; // 默认保留
-                const std::string& valueToCheck = row[whereColIdxInJoined];
-                // --- 开始复制和调整自您单表查询的 WHERE 逻辑 ---
-                bool valueIsNull = (valueToCheck.empty() || iequals(valueToCheck, "NULL")); // iequals 需要定义或替换
+                bool row_meets_all_conditions = true;
+                if (!cmd.whereConditions.conditions.empty()) {
+                    // 评估第一个条件
+                    // **关键点**: 传递合并后的列类型 `joinedAllTypes`
+                    row_meets_all_conditions = evaluate_single_condition(cmd.whereConditions.conditions[0], joined_row_values, joinedColNameToIndex, joinedAllTypes);
 
-                if (cmd.useIsNullClause) {
-                    keepRow = (valueIsNull != cmd.isNot); // isNot为true表示NOT NULL,此时valueIsNull为false才保留。 isNot为false表示IS NULL，此时valueIsNull为true才保留
-                }
-                else if (cmd.useInClause) {
-                    if (valueIsNull) {
-                        keepRow = false;
-                    }
-                    else {
-                        keepRow = false;
-                        for (const std::string& inVal : cmd.inValues) {
-                            if (valueToCheck == inVal) {
-                                keepRow = true;
-                                break;
+                    // 依次应用 AND/OR 和后续条件
+                    for (size_t i = 0; i < cmd.whereConditions.logicalOperators.size(); ++i) {
+                        if (i + 1 < cmd.whereConditions.conditions.size()) {
+                            bool next_condition_result = evaluate_single_condition(cmd.whereConditions.conditions[i + 1], joined_row_values, joinedColNameToIndex, joinedAllTypes);
+                            std::string logical_op = cmd.whereConditions.logicalOperators[i];
+                            // (AND/OR 逻辑不变) ...
+                            if (logical_op == "AND") {
+                                row_meets_all_conditions = row_meets_all_conditions && next_condition_result;
+                            }
+                            else if (logical_op == "OR") {
+                                row_meets_all_conditions = row_meets_all_conditions || next_condition_result;
+                            }
+                            else {
+                                std::cerr << "错误: 未知的逻辑运算符: " << logical_op << std::endl;
+                                row_meets_all_conditions = false; break;
                             }
                         }
-                        // if (cmd.isNot) keepRow = !keepRow; // 假设isNot也适用于IN (NOT IN)
+                        else {
+                            std::cerr << "错误: 逻辑运算符后缺少条件。" << std::endl;
+                            row_meets_all_conditions = false; break;
+                        }
                     }
                 }
-                else { // 常规比较
-                    // 假设 cmd.whereValue 已经是剥离引号的纯值
-                    bool compareValueIsNull = (cmd.whereValue.empty() || iequals(cmd.whereValue, "NULL")); // 如果whereValue可能是"NULL"字符串
 
-                    if (valueIsNull || compareValueIsNull) { // 至少一个操作数是 SQL NULL
-                        if (cmd.whereOperator == "=") keepRow = (valueIsNull && compareValueIsNull); // 只有 NULL = NULL (如果解释为真)
-                        else if (cmd.whereOperator == "<>") keepRow = !(valueIsNull && compareValueIsNull); // 只有 NULL <> NULL (如果解释为真)
-                        else keepRow = false; // 其他比较符与NULL通常结果为false或未知
-                    }
-                    else { // 两个操作数都不是 SQL NULL
-                        if (cmd.whereOperator == "=") keepRow = (valueToCheck == cmd.whereValue);
-                        else if (cmd.whereOperator == "<>") keepRow = (valueToCheck != cmd.whereValue);
-                        // 注意：这里的 > >= < <= 对于字符串比较可能不是您期望的数值比较
-                        // 您可能需要根据列类型转换后再比较，但目前只存字符串
-                        else if (cmd.whereOperator == ">") keepRow = (valueToCheck > cmd.whereValue);
-                        else if (cmd.whereOperator == ">=") keepRow = (valueToCheck >= cmd.whereValue);
-                        else if (cmd.whereOperator == "<") keepRow = (valueToCheck < cmd.whereValue);
-                        else if (cmd.whereOperator == "<=") keepRow = (valueToCheck <= cmd.whereValue);
-                        else { std::cerr << "警告: 未知的WHERE操作符: " << cmd.whereOperator << std::endl; keepRow = false; }
-                    }
-                }
-                // --- 结束复制和调整的 WHERE 逻辑 ---
-                if (keepRow) {
-                    filteredJoinedRows.push_back(row);
+                if (row_meets_all_conditions) {
+                    filteredJoinedRows.push_back(joined_row_values);
                 }
             }
         }
@@ -2106,74 +2173,123 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
             return result;
         }
 
-        // --- 3. 读取数据并过滤 (WHERE) (单表) ---
-        std::vector<std::vector<std::string>> filteredDataRows;
+        //// --- 3. 读取数据并过滤 (WHERE) (单表) ---
+        //std::vector<std::vector<std::string>> filteredDataRows;
+        //std::vector<std::string> dataLines = readLinesFromFile(dataPath);
+        //int whereColIdx = -1;
+
+        //if (cmd.hasWhere) {
+        //    std::string whereColTrimmed = trim(cmd.whereColumn);
+        //    if (!colNameToIndex.count(whereColTrimmed)) {
+        //        result.success = false;
+        //        result.errorMessage = "错误: WHERE 子句中的列 '" + cmd.whereColumn + "' 在表中不存在。";
+        //        return result;
+        //    }
+        //    whereColIdx = colNameToIndex[whereColTrimmed];
+        //}
+
+        //for (const std::string& line : dataLines) {
+        //    if (line.empty()) continue;
+        //    std::vector<std::string> rawValues = parseCsvRow(line);
+        //    if (rawValues.size() != allColumns.size()) {
+        //        std::cerr << "警告 (行): 数据行列数与表定义不符，已跳过。" << std::endl;
+        //        continue;
+        //    }
+
+        //    bool keepRow = true;
+        //    if (cmd.hasWhere) {
+        //        if (whereColIdx < 0 || static_cast<size_t>(whereColIdx) >= rawValues.size()) {
+        //            keepRow = false; // 索引无效
+        //        }
+        //        else {
+        //            const std::string& valueToCheck = rawValues[whereColIdx];
+        //            //  *** 在此完整复制您单表查询的 WHERE 判断逻辑 (cmd.useIsNullClause, cmd.useInClause, 常规比较等) ***
+        //            //  (为了简洁，这里省略了那段复杂的 if/else if/else 逻辑，您需要从您的旧代码中复制过来)
+        //            bool valueIsNull = (valueToCheck.empty() || iequals(valueToCheck, "NULL"));
+
+        //            if (cmd.useIsNullClause) {
+        //                keepRow = (valueIsNull != cmd.isNot);
+        //            }
+        //            else if (cmd.useInClause) {
+        //                if (valueIsNull) { keepRow = false; }
+        //                else {
+        //                    keepRow = false;
+        //                    for (const std::string& inVal : cmd.inValues) {
+        //                        if (valueToCheck == inVal) { keepRow = true; break; }
+        //                    }
+        //                    // if(cmd.isNot) keepRow = !keepRow; // Assuming isNot applies to IN (NOT IN)
+        //                }
+        //            }
+        //            else { // Regular comparison
+        //                bool compareValueIsNull = (cmd.whereValue.empty() || iequals(cmd.whereValue, "NULL"));
+        //                if (valueIsNull || compareValueIsNull) {
+        //                    if (cmd.whereOperator == "=") keepRow = (valueIsNull && compareValueIsNull);
+        //                    else if (cmd.whereOperator == "<>") keepRow = !(valueIsNull && compareValueIsNull);
+        //                    else keepRow = false;
+        //                }
+        //                else {
+        //                    if (cmd.whereOperator == "=") keepRow = (valueToCheck == cmd.whereValue);
+        //                    else if (cmd.whereOperator == "<>") keepRow = (valueToCheck != cmd.whereValue);
+        //                    else if (cmd.whereOperator == ">") keepRow = (valueToCheck > cmd.whereValue);
+        //                    else if (cmd.whereOperator == ">=") keepRow = (valueToCheck >= cmd.whereValue);
+        //                    else if (cmd.whereOperator == "<") keepRow = (valueToCheck < cmd.whereValue);
+        //                    else if (cmd.whereOperator == "<=") keepRow = (valueToCheck <= cmd.whereValue);
+        //                    else keepRow = false;
+        //                }
+        //            }
+        //        }
+        //    }
+        //    if (keepRow) {
+        //        filteredDataRows.push_back(rawValues);
+        //    }
+        //}
+        // --- 3. 读取数据并过滤 (WHERE) ---
+// ... (加载数据行到 lines 或 dataLines1/dataLines2) ...
+        std::vector<std::vector<std::string>> filteredDataRows; // (或 filteredJoinedRows)
         std::vector<std::string> dataLines = readLinesFromFile(dataPath);
-        int whereColIdx = -1;
-
-        if (cmd.hasWhere) {
-            std::string whereColTrimmed = trim(cmd.whereColumn);
-            if (!colNameToIndex.count(whereColTrimmed)) {
-                result.success = false;
-                result.errorMessage = "错误: WHERE 子句中的列 '" + cmd.whereColumn + "' 在表中不存在。";
-                return result;
-            }
-            whereColIdx = colNameToIndex[whereColTrimmed];
-        }
-
-        for (const std::string& line : dataLines) {
+        int lineNum = 0;
+        for (const std::string& line : dataLines) { // source_lines 是 dataLines 或 dataLines1/dataLines2 (JOIN时需调整)
+            lineNum++;
             if (line.empty()) continue;
-            std::vector<std::string> rawValues = parseCsvRow(line);
-            if (rawValues.size() != allColumns.size()) {
-                std::cerr << "警告 (行): 数据行列数与表定义不符，已跳过。" << std::endl;
-                continue;
-            }
+            std::vector<std::string> rawValues = parseCsvRow(line); // (或 combinedRow for JOIN)
+            // ... (确保 rawValues 列数与元数据匹配) ...
 
-            bool keepRow = true;
-            if (cmd.hasWhere) {
-                if (whereColIdx < 0 || static_cast<size_t>(whereColIdx) >= rawValues.size()) {
-                    keepRow = false; // 索引无效
+            bool row_meets_all_conditions = true; // 默认通过，如果无WHERE子句
+            if (cmd.hasWhere && !cmd.whereConditions.conditions.empty()) {
+                // 评估第一个条件
+                if (!cmd.whereConditions.conditions.empty()) {
+                    row_meets_all_conditions = evaluate_single_condition(cmd.whereConditions.conditions[0], rawValues, colNameToIndex, allTypes);
+                    // colNameToIndex 和 allTypes 需要对应于 rawValues 的来源 (单表或JOIN后)
                 }
-                else {
-                    const std::string& valueToCheck = rawValues[whereColIdx];
-                    //  *** 在此完整复制您单表查询的 WHERE 判断逻辑 (cmd.useIsNullClause, cmd.useInClause, 常规比较等) ***
-                    //  (为了简洁，这里省略了那段复杂的 if/else if/else 逻辑，您需要从您的旧代码中复制过来)
-                    bool valueIsNull = (valueToCheck.empty() || iequals(valueToCheck, "NULL"));
 
-                    if (cmd.useIsNullClause) {
-                        keepRow = (valueIsNull != cmd.isNot);
-                    }
-                    else if (cmd.useInClause) {
-                        if (valueIsNull) { keepRow = false; }
-                        else {
-                            keepRow = false;
-                            for (const std::string& inVal : cmd.inValues) {
-                                if (valueToCheck == inVal) { keepRow = true; break; }
-                            }
-                            // if(cmd.isNot) keepRow = !keepRow; // Assuming isNot applies to IN (NOT IN)
+                // 依次应用 AND/OR 和后续条件
+                for (size_t i = 0; i < cmd.whereConditions.logicalOperators.size(); ++i) {
+                    if (i + 1 < cmd.whereConditions.conditions.size()) {
+                        bool next_condition_result = evaluate_single_condition(cmd.whereConditions.conditions[i + 1], rawValues, colNameToIndex, allTypes);
+                        std::string logical_op = cmd.whereConditions.logicalOperators[i];
+                        std::transform(logical_op.begin(), logical_op.end(), logical_op.begin(), ::toupper);
+
+                        if (logical_op == "AND") {
+                            row_meets_all_conditions = row_meets_all_conditions && next_condition_result;
                         }
-                    }
-                    else { // Regular comparison
-                        bool compareValueIsNull = (cmd.whereValue.empty() || iequals(cmd.whereValue, "NULL"));
-                        if (valueIsNull || compareValueIsNull) {
-                            if (cmd.whereOperator == "=") keepRow = (valueIsNull && compareValueIsNull);
-                            else if (cmd.whereOperator == "<>") keepRow = !(valueIsNull && compareValueIsNull);
-                            else keepRow = false;
+                        else if (logical_op == "OR") {
+                            row_meets_all_conditions = row_meets_all_conditions || next_condition_result;
                         }
                         else {
-                            if (cmd.whereOperator == "=") keepRow = (valueToCheck == cmd.whereValue);
-                            else if (cmd.whereOperator == "<>") keepRow = (valueToCheck != cmd.whereValue);
-                            else if (cmd.whereOperator == ">") keepRow = (valueToCheck > cmd.whereValue);
-                            else if (cmd.whereOperator == ">=") keepRow = (valueToCheck >= cmd.whereValue);
-                            else if (cmd.whereOperator == "<") keepRow = (valueToCheck < cmd.whereValue);
-                            else if (cmd.whereOperator == "<=") keepRow = (valueToCheck <= cmd.whereValue);
-                            else keepRow = false;
+                            std::cerr << "错误: 未知的逻辑运算符: " << logical_op << std::endl;
+                            row_meets_all_conditions = false; // 出错则认为不满足
+                            break;
                         }
+                    }
+                    else {
+                        std::cerr << "错误: 逻辑运算符后缺少条件。" << std::endl;
+                        row_meets_all_conditions = false; break;
                     }
                 }
             }
-            if (keepRow) {
-                filteredDataRows.push_back(rawValues);
+
+            if (row_meets_all_conditions) {
+                filteredDataRows.push_back(rawValues); // (或 filteredJoinedRows)
             }
         }
 

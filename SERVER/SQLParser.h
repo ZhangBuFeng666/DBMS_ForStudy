@@ -30,8 +30,37 @@ struct ColumnConstraintInfo {
     bool isUnique = false;
 };
 
+
 // 定义 SQL 命令结构体
 struct SQLCommand {
+
+    // 首先，定义单个条件表达式的结构
+    struct Condition {
+        std::string columnName;
+        std::string op;         // 比较运算符: =, <>, >, <, >=, <=
+        std::string value;      // 比较的值 (如果是字符串，应去除引号)
+        bool isValueQuoted = false; // 标记原始值是否有引号
+
+        bool useInClause = false;
+        std::vector<std::string> inValues;
+
+        bool useIsNullClause = false;
+        bool isNotNull = false; // 如果 useIsNullClause 为 true, isNotNull 为 true 表示 IS NOT NULL
+
+        // (未来可以扩展支持 LIKE 等)
+    };
+
+    // 然后，定义条件组，用于支持 AND/OR
+    struct ConditionGroup {
+        std::vector<Condition> conditions;          // 该组内的简单条件
+        std::vector<std::string> logicalOperators;  // 连接 conditions 的逻辑运算符 ("AND", "OR")
+        // logicalOperators.size() == conditions.size() - 1
+
+    // 为了支持更复杂的嵌套 (例如 WHERE (A AND B) OR C)，您可能需要递归结构:
+    // std::vector<std::variant<Condition, ConditionGroup>> operands;
+    // std::vector<std::string> logicalConnectors; // "AND", "OR"
+    // 但初期可以先从简单的线性 AND/OR 开始
+    };
     // 基本命令类型枚举
     enum CommandType {
         CREATE_TABLE,CREATE_USER, ALTER, DROP,
@@ -72,6 +101,9 @@ struct SQLCommand {
     std::string whereValue;         // WHERE = 的比较值
     bool useInClause = false;       // 标记 WHERE 子句是否使用 IN
     std::vector<std::string> inValues; // WHERE IN (...) 的值列表
+
+    // 新增：存储解析后的WHERE条件组
+    ConditionGroup whereConditions; // 对于简单的实现，一个 ConditionGroup 可能就够了
 
     // --- ALTER 特定字段 ---
     enum AlterAction { // ALTER TABLE 操作的具体类型

@@ -356,7 +356,7 @@ void run_constraint_tests() {
     process_sql("INSERT INTO employees VALUES (2, 'Bob', 102, 60000);", db, parser, currentDbName);   // 预期: 成功
     process_sql("INSERT INTO employees VALUES (3, 'Carol', 101, NULL);", db, parser, currentDbName); // 预期: 成功 (salary UNIQUE允许NULL)
     process_sql("INSERT INTO employees VALUES (4, 'David', 103, NULL);", db, parser, currentDbName); // 预期: 成功 (salary UNIQUE允许另一个NULL)
-    process_sql("SELECT * FROM employees;", db, parser, currentDbName);
+    process_sql("SELECT * FROM employees where eid = 1 and dept_id = 101;", db, parser, currentDbName);
 
     
 
@@ -379,8 +379,8 @@ void run_constraint_tests() {
     // 3.1 内连接测试
     std::cout << "\n--- 3.1 内连接测试 ---" << std::endl;
     process_sql("SELECT * FROM employees join departments on employees.dept_id = departments.dept_id;", db, parser, currentDbName);
-    process_sql("SELECT * FROM employees join departments on employees.dept_id = departments.dept_id where dept_id > 101;", db, parser, currentDbName);
-    process_sql("SELECT * FROM employees join departments on employees.dept_id > departments.dept_id where dept_id > 101;", db, parser, currentDbName);
+    process_sql("SELECT * FROM employees join departments on employees.dept_id = departments.dept_id where departments.dept_id > 101;", db, parser, currentDbName);
+    process_sql("SELECT * FROM employees join departments on employees.dept_id > departments.dept_id where departments.dept_id > 101;", db, parser, currentDbName);
     //// === 3. 测试 UPDATE 与约束 ===
     //std::cout << "\n--- 3. 测试 UPDATE 与约束 (表: employees) ---" << std::endl;
     //// 3.1 成功更新 (不违反约束)
