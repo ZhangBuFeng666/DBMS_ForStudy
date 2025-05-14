@@ -12,7 +12,7 @@
 #include <algorithm> // 用于 std::remove, std::transform
 #include <set>       // 用于 std::set (实现 distinct 的另一种方式，这里没用)
 #include <map>       // 用于列名到索引的映射
-
+#include"Indexes.h"
 
 // 确保命名空间被使用
 using namespace std;
@@ -303,10 +303,6 @@ namespace {
 
 
 } // 结束匿名命名空间
-
-
-
-
 
 
 // --- 新增：检查用户登录 ---
@@ -2137,10 +2133,10 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
     }
     else { // 单表 SELECT 查询
         std::cout << "调试: 执行单表 SELECT 查询。" << std::endl;
-        // ====================================================================
+        // ===========================================================================================================================================================================================
         // 在这里粘贴并整合之前可工作的单表 SELECT 查询的完整代码逻辑
         // 即 (SelectResult SQLInterface::select_from_table...)
-        // ====================================================================
+        // ===========================================================================================================================================================================================
 
         // --- 1. 检查文件和加载元数据 (单表) ---
         std::string metaDir = METADATA_DB_ROOT + cmd.dbName + "/" + cmd.fromTable + "/";
@@ -2214,126 +2210,241 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
             return result;
         }
 
-        //// --- 3. 读取数据并过滤 (WHERE) (单表) ---
-        //std::vector<std::vector<std::string>> filteredDataRows;
-        //std::vector<std::string> dataLines = readLinesFromFile(dataPath);
-        //int whereColIdx = -1;
+        //————————————————————————————————————————————————————————————————————————————————————————————————————————
+        // --- 3. 数据获取与过滤 ---
+        std::vector<std::vector<std::string>> filteredDataRows; // 存储最终通过所有过滤条件的、已解析的行
+        bool used_index = false;
 
-        //if (cmd.hasWhere) {
-        //    std::string whereColTrimmed = trim(cmd.whereColumn);
-        //    if (!colNameToIndex.count(whereColTrimmed)) {
-        //        result.success = false;
-        //        result.errorMessage = "错误: WHERE 子句中的列 '" + cmd.whereColumn + "' 在表中不存在。";
-        //        return result;
-        //    }
-        //    whereColIdx = colNameToIndex[whereColTrimmed];
-        //}
+        if (cmd.hasWhere && cmd.whereConditions.conditions.size() == 1 &&
+            cmd.whereConditions.logicalOperators.empty() &&
+            !cmd.whereConditions.conditions[0].useIsNullClause &&
+            !cmd.whereConditions.conditions[0].useInClause)
+        {
+            const auto& cond = cmd.whereConditions.conditions[0];
+            std::string where_column_name = trim(cond.columnName);
+            std::string index_path = findIndexPath(cmd.fromTable, where_column_name);
 
-        //for (const std::string& line : dataLines) {
-        //    if (line.empty()) continue;
-        //    std::vector<std::string> rawValues = parseCsvRow(line);
-        //    if (rawValues.size() != allColumns.size()) {
-        //        std::cerr << "警告 (行): 数据行列数与表定义不符，已跳过。" << std::endl;
-        //        continue;
-        //    }
+            if (!index_path.empty()) {
+                std::cout << "调试: 发现列 '" << where_column_name << "' 的索引，路径: " << index_path << std::endl;
+                std::string start_input_for_index = "*"; // 默认从头/负无穷
+                std::string end_input_for_index = "*";   // 默认到尾/正无穷
+                bool condition_is_index_compatible = false;
+                std::string indexed_column_type;
 
-        //    bool keepRow = true;
-        //    if (cmd.hasWhere) {
-        //        if (whereColIdx < 0 || static_cast<size_t>(whereColIdx) >= rawValues.size()) {
-        //            keepRow = false; // 索引无效
-        //        }
-        //        else {
-        //            const std::string& valueToCheck = rawValues[whereColIdx];
-        //            //  *** 在此完整复制您单表查询的 WHERE 判断逻辑 (cmd.useIsNullClause, cmd.useInClause, 常规比较等) ***
-        //            //  (为了简洁，这里省略了那段复杂的 if/else if/else 逻辑，您需要从您的旧代码中复制过来)
-        //            bool valueIsNull = (valueToCheck.empty() || iequals(valueToCheck, "NULL"));
-
-        //            if (cmd.useIsNullClause) {
-        //                keepRow = (valueIsNull != cmd.isNot);
-        //            }
-        //            else if (cmd.useInClause) {
-        //                if (valueIsNull) { keepRow = false; }
-        //                else {
-        //                    keepRow = false;
-        //                    for (const std::string& inVal : cmd.inValues) {
-        //                        if (valueToCheck == inVal) { keepRow = true; break; }
-        //                    }
-        //                    // if(cmd.isNot) keepRow = !keepRow; // Assuming isNot applies to IN (NOT IN)
-        //                }
-        //            }
-        //            else { // Regular comparison
-        //                bool compareValueIsNull = (cmd.whereValue.empty() || iequals(cmd.whereValue, "NULL"));
-        //                if (valueIsNull || compareValueIsNull) {
-        //                    if (cmd.whereOperator == "=") keepRow = (valueIsNull && compareValueIsNull);
-        //                    else if (cmd.whereOperator == "<>") keepRow = !(valueIsNull && compareValueIsNull);
-        //                    else keepRow = false;
-        //                }
-        //                else {
-        //                    if (cmd.whereOperator == "=") keepRow = (valueToCheck == cmd.whereValue);
-        //                    else if (cmd.whereOperator == "<>") keepRow = (valueToCheck != cmd.whereValue);
-        //                    else if (cmd.whereOperator == ">") keepRow = (valueToCheck > cmd.whereValue);
-        //                    else if (cmd.whereOperator == ">=") keepRow = (valueToCheck >= cmd.whereValue);
-        //                    else if (cmd.whereOperator == "<") keepRow = (valueToCheck < cmd.whereValue);
-        //                    else if (cmd.whereOperator == "<=") keepRow = (valueToCheck <= cmd.whereValue);
-        //                    else keepRow = false;
-        //                }
-        //            }
-        //        }
-        //    }
-        //    if (keepRow) {
-        //        filteredDataRows.push_back(rawValues);
-        //    }
-        //}
-        // --- 3. 读取数据并过滤 (WHERE) ---
-// ... (加载数据行到 lines 或 dataLines1/dataLines2) ...
-        std::vector<std::vector<std::string>> filteredDataRows; // (或 filteredJoinedRows)
-        std::vector<std::string> dataLines = readLinesFromFile(dataPath);
-        int lineNum = 0;
-        for (const std::string& line : dataLines) { // source_lines 是 dataLines 或 dataLines1/dataLines2 (JOIN时需调整)
-            lineNum++;
-            if (line.empty()) continue;
-            std::vector<std::string> rawValues = parseCsvRow(line); // (或 combinedRow for JOIN)
-            // ... (确保 rawValues 列数与元数据匹配) ...
-
-            bool row_meets_all_conditions = true; // 默认通过，如果无WHERE子句
-            if (cmd.hasWhere && !cmd.whereConditions.conditions.empty()) {
-                // 评估第一个条件
-                if (!cmd.whereConditions.conditions.empty()) {
-                    row_meets_all_conditions = evaluate_single_condition(cmd.whereConditions.conditions[0], rawValues, colNameToIndex, allTypes);
-                    // colNameToIndex 和 allTypes 需要对应于 rawValues 的来源 (单表或JOIN后)
+                try {
+                    indexed_column_type = getColumnType(cmd.fromTable, where_column_name); // 可能会抛出异常
+                }
+                catch (const std::runtime_error& e) {
+                    std::cerr << "警告: 获取索引列 '" << where_column_name << "' 类型失败: " << e.what() << ". 将回退到全表扫描。" << std::endl;
+                    index_path.clear();
                 }
 
-                // 依次应用 AND/OR 和后续条件
-                for (size_t i = 0; i < cmd.whereConditions.logicalOperators.size(); ++i) {
-                    if (i + 1 < cmd.whereConditions.conditions.size()) {
-                        bool next_condition_result = evaluate_single_condition(cmd.whereConditions.conditions[i + 1], rawValues, colNameToIndex, allTypes);
-                        std::string logical_op = cmd.whereConditions.logicalOperators[i];
-                        std::transform(logical_op.begin(), logical_op.end(), logical_op.begin(), ::toupper);
+                if (!index_path.empty()) {
+                    // 根据你的描述，你的 rangeQueryAuto 用 "*" 表示开放边界
+                    // 而 cond.value 是解析器提取的值
 
-                        if (logical_op == "AND") {
-                            row_meets_all_conditions = row_meets_all_conditions && next_condition_result;
+                    // 1. 等值查询: column = value  =>  start=value, end=value
+                    if (cond.op == "=") {
+                        start_input_for_index = cond.value;
+                        end_input_for_index = cond.value;
+                        condition_is_index_compatible = true;
+                    }
+                    // 2. 大于等于: column >= value  => start=value, end="*"
+                    else if (cond.op == ">=") {
+                        start_input_for_index = cond.value;
+                        // end_input_for_index 保持 "*"
+                        condition_is_index_compatible = true;
+                    }
+                    // 3. 大于: column > value  => start=value (B+树通常是 >=), end="*"
+                    //    需要后处理来排除等于 value 的情况
+                    else if (cond.op == ">") {
+                        start_input_for_index = cond.value;
+                        // end_input_for_index 保持 "*"
+                        condition_is_index_compatible = true; // 标记需要后处理
+                    }
+                    // 4. 小于等于: column <= value => start="*", end=value
+                    else if (cond.op == "<=") {
+                        // start_input_for_index 保持 "*"
+                        end_input_for_index = cond.value;
+                        condition_is_index_compatible = true;
+                    }
+                    // 5. 小于: column < value => start="*", end=value (B+树通常是 <=)
+                    //    需要后处理来排除等于 value 的情况
+                    else if (cond.op == "<") {
+                        // start_input_for_index 保持 "*"
+                        end_input_for_index = cond.value;
+                        condition_is_index_compatible = true; // 标记需要后处理
+                    }
+                    // 注意：如果 SQL 解析器能将 "column BETWEEN val1 AND val2"
+                    // 解析为两个条件 (column >= val1 AND column <= val2)
+                    // 并且你的 WHERE 条件处理逻辑能识别这种情况，
+                    // 那么你可以尝试为这种情况组合使用索引，或者选择一个条件使用索引然后后过滤。
+                    // 当前的 cmd.whereConditions.conditions.size() == 1 限制了这种情况。
+                    // 如果要直接处理 BETWEEN，解析器需要填充一个特殊的 cond.op 或标志。
+                    // 或者，如果你的 SQL 是 `age > 12 AND age < 18` (没有直接的 BETWEEN)
+                    // 并且 cmd.whereConditions 有两个条件，你需要更复杂的逻辑来决定如何使用索引。
+                    //
+                    // 对于你描述的 `(student,age,12,18)` 场景 (年龄位于12-18):
+                    // 这意味着 WHERE age >= '12' AND age <= '18' (假设是闭区间)
+                    // 你当前的 `cmd.whereConditions.conditions.size() == 1` 会阻止这种情况使用索引。
+                    // 你需要修改解析器或者这里的逻辑来处理由 BETWEEN 产生的或用户直接写的 AND 连接的范围条件。
+                    //
+                    // 假设：如果用户写 `WHERE age >= 12 AND age <= 18`，
+                    // 你的解析器会产生两个 Condition 对象，通过 "AND" 连接。
+                    // 那么你需要修改这里的 if 条件和内部逻辑：
+                    /*
+                    if (cmd.hasWhere && cmd.whereConditions.logicalOperators.size() == 1 &&
+                        cmd.whereConditions.logicalOperators[0] == "AND" &&
+                        cmd.whereConditions.conditions.size() == 2) {
+                        const auto& cond1 = cmd.whereConditions.conditions[0];
+                        const auto& cond2 = cmd.whereConditions.conditions[1];
+                        // 检查 cond1 和 cond2 是否针对同一个索引列，一个是 >=, 一个是 <=
+                        if (trim(cond1.columnName) == where_column_name &&
+                            trim(cond2.columnName) == where_column_name) {
+                            if ((cond1.op == ">=" && cond2.op == "<=") || (cond1.op == "<=" && cond2.op == ">=")) {
+                                start_input_for_index = (cond1.op == ">=") ? cond1.value : cond2.value;
+                                end_input_for_index   = (cond1.op == "<=") ? cond1.value : cond2.value;
+                                condition_is_index_compatible = true;
+                            }
+                            // 类似地处理 > 和 < 的组合，并标记后处理
                         }
-                        else if (logical_op == "OR") {
-                            row_meets_all_conditions = row_meets_all_conditions || next_condition_result;
+                    }
+                    */
+                    // 为了保持当前代码的简单性，我们先只处理单个条件。
+                    // 你可以之后扩展这个逻辑以支持 `col >= A AND col <= B`。
+
+                    if (condition_is_index_compatible) {
+                        std::cout << "调试: 准备调用索引。表: " << cmd.fromTable
+                            << ", 列: " << where_column_name
+                            << ", StartInput: '" << start_input_for_index
+                            << "', EndInput: '" << end_input_for_index << "'" << std::endl;
+                        try {
+                            std::vector<std::string> indexed_row_strings = rangeQueryAuto(
+                                cmd.fromTable,
+                                where_column_name,
+                                start_input_for_index,
+                                end_input_for_index
+                            );
+                            used_index = true;
+                            std::cout << "调试: 索引查询返回 " << indexed_row_strings.size() << " 行。" << std::endl;
+
+                            int indexed_col_original_idx = colNameToIndex.count(where_column_name) ? colNameToIndex.at(where_column_name) : -1;
+
+                            for (const std::string& line_str : indexed_row_strings) {
+                                if (line_str.empty()) continue;
+                                std::vector<std::string> rawValues = parseCsvRow(line_str);
+
+                                if (rawValues.size() != allColumns.size()) {
+                                    std::cerr << "警告: 从索引获取的行 '" << line_str << "' 列数 (" << rawValues.size() << ") 与表定义 (" << allColumns.size() << ") 不符，已跳过。" << std::endl;
+                                    continue;
+                                }
+
+                                bool passes_strict_check = true;
+                                // 后处理 > 和 <
+                                if ((cond.op == ">" || cond.op == "<") && indexed_col_original_idx != -1) {
+                                    const std::string& val_from_record_str = rawValues[indexed_col_original_idx];
+
+                                    // indexed_column_type 应该已经从 getColumnType 获取
+                                    if (isIntegerType(indexed_column_type)) {
+                                        try {
+                                            long long num_record = std::stoll(val_from_record_str);
+                                            long long num_boundary = std::stoll(cond.value); // cond.value 是 WHERE 条件中的值
+                                            if (cond.op == ">" && num_record <= num_boundary) passes_strict_check = false;
+                                            if (cond.op == "<" && num_record >= num_boundary) passes_strict_check = false;
+                                        }
+                                        catch (const std::exception& e) {
+                                            passes_strict_check = false;
+                                            std::cerr << "警告: 后处理索引结果时数字转换失败 for value '" << val_from_record_str << "': " << e.what() << std::endl;
+                                        }
+                                    }
+                                    else { // 字符串比较
+                                        // 对于字符串，直接比较
+                                        if (cond.op == ">" && val_from_record_str <= cond.value) passes_strict_check = false;
+                                        if (cond.op == "<" && val_from_record_str >= cond.value) passes_strict_check = false;
+                                    }
+                                }
+
+                                if (passes_strict_check) {
+                                    // **重要**: 如果原始 WHERE 子句比索引条件更复杂（例如，还有其他 AND 连接的非索引列条件），
+                                    // 你需要在这里对 rawValues 应用那些剩余的条件。
+                                    // 当前代码假设如果索引被使用，它就满足了整个（简单）WHERE 条件。
+                                    // 如果你的 cmd.whereConditions 始终只有一个条件（如这里的 if 分支所限），则不需要额外过滤。
+                                    filteredDataRows.push_back(rawValues);
+                                }
+                            }
+                            std::cout << "调试: 索引后处理后，最终加入结果 " << filteredDataRows.size() << " 行。" << std::endl;
+
                         }
-                        else {
-                            std::cerr << "错误: 未知的逻辑运算符: " << logical_op << std::endl;
-                            row_meets_all_conditions = false; // 出错则认为不满足
-                            break;
+                        catch (const std::runtime_error& e) {
+                            std::cerr << "警告: 索引查询执行失败: " << e.what() << "。将回退到全表扫描。" << std::endl;
+                            used_index = false;
                         }
                     }
                     else {
-                        std::cerr << "错误: 逻辑运算符后缺少条件。" << std::endl;
-                        row_meets_all_conditions = false; break;
+                        std::cout << "调试: WHERE 条件操作符 '" << cond.op << "' 不适合你描述的索引使用方式 (start='*', end='*')。" << std::endl;
                     }
+                } // end if (!index_path.empty() after getColumnType)
+            }
+            else {
+                std::cout << "调试: WHERE 列 '" << where_column_name << "' 无可用索引。" << std::endl;
+            }
+        } // end if (cmd.hasWhere && is simple condition for index)
+
+        // **如果未使用索引，则执行全表扫描和过滤**
+        if (!used_index) {
+            // ... (这里的全表扫描逻辑和你之前的一样，使用 evaluate_single_condition) ...
+            // ... (它会填充 filteredDataRows) ...
+            std::cout << "调试: 执行全表扫描和WHERE过滤。" << std::endl;
+            std::string dataPath = COMMONDATA_ROOT + cmd.fromTable + ".trd";
+            bool dataFileExists = fs::exists(dataPath);
+
+            if (!dataFileExists) {
+                if (!result.header.empty()) {
+                    std::cout << "信息: 数据文件 '" << dataPath << "' 不存在，表为空。" << std::endl;
+                    result.success = true;
+                    return result;
+                }
+                else {
+                    result.success = false;
+                    result.errorMessage = "错误: 数据文件不存在且无列头信息。";
+                    return result;
                 }
             }
 
-            if (row_meets_all_conditions) {
-                filteredDataRows.push_back(rawValues); // (或 filteredJoinedRows)
-            }
-        }
+            std::vector<std::string> dataLines = readLinesFromFile(dataPath);
+            int lineNum = 0;
+            for (const std::string& line : dataLines) {
+                lineNum++;
+                if (line.empty()) continue;
+                std::vector<std::string> rawValues = parseCsvRow(line);
 
+                if (rawValues.size() != allColumns.size()) {
+                    std::cerr << "警告 (行 " << lineNum << "): 全表扫描时数据行列数 (" << rawValues.size() << ") 与表定义 (" << allColumns.size() << ") 不符，已跳过。" << std::endl;
+                    continue;
+                }
+
+                bool row_meets_all_conditions = true;
+                if (cmd.hasWhere && !cmd.whereConditions.conditions.empty()) {
+                    row_meets_all_conditions = evaluate_single_condition(cmd.whereConditions.conditions[0], rawValues, colNameToIndex, allTypes);
+                    for (size_t i = 0; i < cmd.whereConditions.logicalOperators.size(); ++i) {
+                        if (i + 1 < cmd.whereConditions.conditions.size()) {
+                            bool next_condition_result = evaluate_single_condition(cmd.whereConditions.conditions[i + 1], rawValues, colNameToIndex, allTypes);
+                            std::string logical_op = cmd.whereConditions.logicalOperators[i];
+                            std::transform(logical_op.begin(), logical_op.end(), logical_op.begin(), ::toupper);
+                            if (logical_op == "AND") row_meets_all_conditions = row_meets_all_conditions && next_condition_result;
+                            else if (logical_op == "OR") row_meets_all_conditions = row_meets_all_conditions || next_condition_result;
+                            else { std::cerr << "错误: 未知的逻辑运算符: " << logical_op << std::endl; row_meets_all_conditions = false; break; }
+                        }
+                        else { std::cerr << "错误: 逻辑运算符后缺少条件。" << std::endl; row_meets_all_conditions = false; break; }
+                    }
+                }
+                if (row_meets_all_conditions) {
+                    filteredDataRows.push_back(rawValues);
+                }
+            }
+        } // end if (!used_index)
+
+         //————————————————————————————————————————————————————————————————————————————————————————————————————————
         // --- 4. 投影 (单表) ---
         std::vector<std::vector<std::string>> projectedFinalData;
         for (const auto& rawRow : filteredDataRows) {
