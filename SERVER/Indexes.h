@@ -150,7 +150,7 @@ public:
 
 // ================== 索引管理函数 ==================
 bool isIndexExist(const std::string& table, const std::string& column, const std::string& indexName);
-void create_index(const std::string& table_name, const std::string& column_name, const std::string& index_name);
+bool create_index(const std::string& table_name, const std::string& column_name, const std::string& index_name);
 std::string findIndexPath(const std::string& table, const std::string& column);
 std::string getColumnType(const std::string& table, const std::string& column);
 IndexKey createIndexKey(const std::string& table, const std::string& column, const std::string& input);

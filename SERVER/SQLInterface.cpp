@@ -425,6 +425,16 @@ bool SQLInterface::process_sql_command(const std::string& sql, const std::string
             result_message = success ? "数据插入成功。" : "错误: 插入数据失败。"; 
         }
         break;
+    case SQLCommand::CREATE_INDEX:
+        if (cmd.tableName.empty() || cmd.columnName.empty() || cmd.indexName.empty()) {
+            result_message = "错误: 无效的 CREATE INDEX 命令。";
+            success = false;
+        }
+        else {
+            success=create_index(cmd.tableName, cmd.columnName, cmd.indexName);
+            result_message = success ? "索引 '" + cmd.indexName + "' 创建成功。" : "错误: 创建索引 '" + cmd.indexName + "' 失败。";
+        }
+        break;
     case SQLCommand::UPDATE:
         // OLD: if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) {
         if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere || cmd.whereConditions.conditions.empty()) { // Check new structure
@@ -2319,12 +2329,12 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                             << ", StartInput: '" << start_input_for_index
                             << "', EndInput: '" << end_input_for_index << "'" << std::endl;
                         try {
-                            std::vector<std::string> indexed_row_strings = rangeQueryAuto(
+                            std::vector<std::string> indexed_row_strings = LongtoString(rangeQueryAuto(
                                 cmd.fromTable,
                                 where_column_name,
                                 start_input_for_index,
                                 end_input_for_index
-                            );
+                            ),cmd.fromTable);
                             used_index = true;
                             std::cout << "调试: 索引查询返回 " << indexed_row_strings.size() << " 行。" << std::endl;
 

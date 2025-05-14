@@ -152,12 +152,12 @@ std::string findIndexName(const std::string& table, const std::string& column) {
 创建索引
 
 */
-void create_index(const std::string& table_name, const std::string& column_name, const std::string& index_name) {
+bool create_index(const std::string& table_name, const std::string& column_name, const std::string& index_name) {
     // 检查索引是否已存在（文件或元数据）
     std::string indexPath = "DATA/INDEX/" + index_name + ".bpt";
     if (IndexManager::isIndexExist(indexPath)) {  // 使用 IndexManager 的文件检查
         std::cerr << "Error: Index already exists\n";
-        return;
+        return false;
     }
 
     // 构建索引（返回 unique_ptr）
@@ -168,7 +168,7 @@ void create_index(const std::string& table_name, const std::string& column_name,
     // 序列化到文件（使用原始指针）
     if (!uniqueTree->serializeToFile(indexPath)) {
         std::cerr << "Failed to serialize index\n";
-        return;
+        return false;
     }
 
     // 转换 unique_ptr → shared_ptr 并加入缓存
@@ -181,6 +181,7 @@ void create_index(const std::string& table_name, const std::string& column_name,
     metaFile.close();
 
     std::cout << "Index created and cached successfully.\n";
+    return true;
 }
 /*
 

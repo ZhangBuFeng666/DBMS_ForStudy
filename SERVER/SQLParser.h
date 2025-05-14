@@ -66,6 +66,7 @@ struct SQLCommand {
         CREATE_TABLE,CREATE_USER, ALTER, DROP,
         INSERT, UPDATE, DELETE_NEW,
         SELECT,
+        CREATE_INDEX,
         UNKNOWN
     } type = UNKNOWN; // 操作类型, 默认为未知
 
@@ -75,6 +76,9 @@ struct SQLCommand {
 
     // --- INSERT 特定字段 ---
     std::vector<std::string> values; // 插入时的字段值列表
+
+    // --- CREATE_INDEX特用字段 ---
+    std::string indexName;
 
     // --- CREATE_TABLE 特定字段 ---
     std::vector<std::pair<std::string, std::string>> fieldDefinitionsWithType; // 字段定义列表 {字段名, 字段类型}

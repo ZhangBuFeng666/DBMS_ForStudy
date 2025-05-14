@@ -1001,6 +1001,15 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
         return cmd; // SELECT 命令解析成功
     }
 
+    //解析 CREATE INDEX index_name ON table_name(column_name)
+    regex createIndexRegex(R"(CREATE\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*\(\s*(\w+)\s*\)\s*;?)", regex::icase);
+    if (regex_match(sql, match, createIndexRegex)) {
+        cmd.type = SQLCommand::CREATE_INDEX;
+        cmd.indexName = match[1];
+        cmd.tableName = match[2];
+        cmd.columnName = match[3];
+        return cmd;
+    }
 
     // 如果没有任何模式匹配成功
     cerr << "错误: 无法识别的 SQL 命令: " << sql << endl;
