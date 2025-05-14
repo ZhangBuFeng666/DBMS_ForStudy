@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <sstream>
 #include <functional>
+#include <mutex>
 
 // ================== 数据类型定义 ==================
 enum class IndexType { INTEGER, STRING };
@@ -145,19 +146,47 @@ public:
     std::string getColumnType() const;
 };
 
+// --- 索引管理器实现 ---
+
+class IndexManager {
+private:
+    static std::unordered_map<std::string, std::shared_ptr<BPlusTree>> indexCache;
+    static std::mutex cacheMutex;
+
+public:
+    // 检查索引是否存在（内存或磁盘）
+    static bool isIndexExist(const std::string& indexPath);
+    // 核心方法：获取或反序列化索引
+    static std::shared_ptr<BPlusTree> getOrDeserializeIndex(const std::string& indexPath);
+    // 强制重新从文件加载
+    static bool reloadIndex(const std::string& indexPath);
+    //添加索引
+    static void addToCache(const std::string& indexPath, std::shared_ptr<BPlusTree> tree);
+    //删除索引
+    static void removeFromCache(const std::string& indexPath);
+    // 检查索引是否存在（内存或磁盘）
+    // 核心方法：获取或反序列化索引
+    // 强制重新从文件加载
+};
+
 // ================== 索引管理函数 ==================
 bool isIndexExist(const std::string& table, const std::string& column, const std::string& indexName);
 void create_index(const std::string& table_name, const std::string& column_name, const std::string& index_name);
 std::string findIndexPath(const std::string& table, const std::string& column);
 std::string getColumnType(const std::string& table, const std::string& column);
 IndexKey createIndexKey(const std::string& table, const std::string& column, const std::string& input);
-std::vector<std::string> rangeQuery(
+std::string findIndexName(const std::string& table, const std::string& column);
+void drop_index(const std::string& index_name);
+void update_index(const std::string& table_name, const std::string& column_name);
+std::vector<long> Merge_index(const std::vector<long>& result1, const std::vector<long>& result2);
+std::vector<std::string> LongtoString(const std::vector<long>& position, const std::string& table_name);
+std::vector<long> rangeQuery(
     const std::string& table,
     const std::string& column,
     const IndexKey& start,
     const IndexKey& end,
     const std::string& columnType);
-std::vector<std::string> rangeQueryAuto(
+std::vector<long> rangeQueryAuto(
     const std::string& table,
     const std::string& column,
     const std::string& startInput,
