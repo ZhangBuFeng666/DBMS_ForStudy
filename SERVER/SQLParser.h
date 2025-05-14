@@ -67,6 +67,7 @@ struct SQLCommand {
         INSERT, UPDATE, DELETE_NEW,
         SELECT,
         CREATE_INDEX,
+        DROP_INDEX,
         UNKNOWN
     } type = UNKNOWN; // 操作类型, 默认为未知
 

@@ -203,7 +203,7 @@ std::vector <long> rangeQueryAuto(
 删除索引
 
 */
-void drop_index(const std::string& index_name) {
+bool drop_index(const std::string& index_name) {
     // 1. 从元数据文件中查找并删除记录
     std::ifstream metaIn("DATA/INDEX/index_meta.csv");
     std::vector<std::string> metaLines;
@@ -226,7 +226,7 @@ void drop_index(const std::string& index_name) {
 
     if (!found) {
         std::cerr << "Error: Index '" << index_name << "' not found\n";
-        return;
+        return false;
     }
 
     // 2. 删除索引数据文件
@@ -234,6 +234,7 @@ void drop_index(const std::string& index_name) {
     if (std::remove(indexPath.c_str()) != 0) {
         std::cerr << "Warning: Failed to delete index file '" << indexPath
             << "', it may not exist or is locked\n";
+        return false;
     }
 
     // 3. 从缓存中移除索引
@@ -247,6 +248,7 @@ void drop_index(const std::string& index_name) {
     metaOut.close();
 
     std::cout << "Index '" << index_name << "' dropped successfully\n";
+    return true;
 }
 
 /*

@@ -8,6 +8,7 @@
 #include <stdexcept> // 用于异常处理
 #include <iomanip>   // 用于格式化输出 (setw)
 #include <algorithm> // 用于 max
+#include"Indexes.h"
 
 // 使用命名空间
 using namespace std;
@@ -223,6 +224,27 @@ bool process_sql(const string& sql,
             }
             break; // 不要忘记 break!
 
+        case SQLCommand::CREATE_INDEX:
+            if (cmd.tableName.empty() || cmd.columnName.empty() || cmd.indexName.empty()) {
+                cerr<< "错误: 无效的 CREATE INDEX 命令。"<<endl;
+                success = false;
+            }
+            else {
+                success = create_index(cmd.tableName, cmd.columnName, cmd.indexName);
+                std::cout <<(success ? ("索引 '" + cmd.indexName + "' 创建成功。") : ("错误: 创建索引 '" + cmd.indexName + "' 失败。"))<<std::endl;
+            }
+            break;
+        case SQLCommand::DROP_INDEX:
+            if (cmd.indexName.empty() || cmd.tableName.empty())
+            {
+                cerr << "错误: 无效的 CREATE INDEX 命令。" << endl;;
+                success = false;
+            }
+            else {
+                success = drop_index(cmd.indexName);
+                cerr << (success ? "索引 '" + cmd.indexName + "' 删除成功。" : "错误: 删除索引 '" + cmd.indexName + "' 失败。") << endl;
+            }
+            break;
         case SQLCommand::UNKNOWN:
         default:
             cerr << "错误: 无法解析 SQL 语句或命令类型未知。" << endl;
@@ -444,6 +466,9 @@ void run_constraint_tests() {
     process_sql("CREATE TABLE employees (eid INT PRIMARY KEY, ename CHAR(50) NOT NULL, dept_id INT, salary INT UNIQUE);", db, parser, currentDbName);
     process_sql("INSERT INTO employees VALUES (1001, 'TestUser', 200, 10000);", db, parser, currentDbName);
 
+    //process_sql("CREATE INDEX idIndex on products(pid);", db, parser, currentDbName);
+    //process_sql("DROP INDEX idIndex on products", db, parser, currentDbName);
+
 
     //// === 5. 更多边界情况和组合 ===
     //std::cout << "\n--- 5. 更多边界情况和组合 (表: products) ---" << std::endl;
@@ -585,9 +610,11 @@ void run_constraint_tests() {
 //    process_sql("DROP TABLE departments;", db, parser, currentDbName);
 //}
  //在你的 main 函数中调用:
+/*
 int main() {
     // ... (你可能有的其他测试或初始化) ...
     run_constraint_tests(); // 调用新的测试函数
     // ... (交互式循环等) ...
     return 0;
 }
+*/

@@ -1010,6 +1010,14 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
         cmd.columnName = match[3];
         return cmd;
     }
+    //解析 DROP INDEX index_name ON table_name
+    regex dropIndexRegex(R"(DROP\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*;?)", regex::icase);
+    if (regex_match(sql, match, dropIndexRegex)) {
+        cmd.type = SQLCommand::DROP_INDEX;
+        cmd.indexName = match[1];
+        cmd.tableName = match[2];
+        return cmd;
+    }
 
     // 如果没有任何模式匹配成功
     cerr << "错误: 无法识别的 SQL 命令: " << sql << endl;

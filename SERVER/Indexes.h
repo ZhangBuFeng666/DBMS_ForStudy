@@ -155,7 +155,7 @@ std::string findIndexPath(const std::string& table, const std::string& column);
 std::string getColumnType(const std::string& table, const std::string& column);
 IndexKey createIndexKey(const std::string& table, const std::string& column, const std::string& input);
 std::string findIndexName(const std::string& table, const std::string& column);
-void drop_index(const std::string& index_name);
+bool drop_index(const std::string& index_name);
 void update_index(const std::string& table_name, const std::string& column_name);
 std::vector<long> Merge_index(const std::vector<long>& result1, const std::vector<long>& result2);
 std::vector<std::string> LongtoString(const std::vector<long>& position, const std::string& table_name);

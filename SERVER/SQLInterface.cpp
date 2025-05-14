@@ -435,6 +435,17 @@ bool SQLInterface::process_sql_command(const std::string& sql, const std::string
             result_message = success ? "索引 '" + cmd.indexName + "' 创建成功。" : "错误: 创建索引 '" + cmd.indexName + "' 失败。";
         }
         break;
+    case SQLCommand::DROP_INDEX:
+        if (cmd.indexName.empty() || cmd.tableName.empty())
+        {
+            result_message = "错误: 无效的 CREATE INDEX 命令。";
+            success = false;
+        }
+        else {
+            success = drop_index(cmd.indexName);
+            result_message = success ? "索引 '" + cmd.indexName + "' 删除成功。" : "错误: 删除索引 '" + cmd.indexName + "' 失败。";
+        }
+        break;
     case SQLCommand::UPDATE:
         // OLD: if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) {
         if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere || cmd.whereConditions.conditions.empty()) { // Check new structure
