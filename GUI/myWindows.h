@@ -17,6 +17,7 @@
 #include <QTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QFormLayout>
 #include <QComboBox>
 #include <QLabel>
 #include <QLineEdit>
@@ -127,7 +128,6 @@ private:
     QPushButton *refreshThisBtn;
     QPushButton *clearHistoryBtn;
     QStackedWidget *resultStack;       // 显示各个查询结果
-    QMap<int, QString> commandMap;     // 保存历史记录文本（可选）
     QWidget *inputWidget;
     QTextEdit  *cmdInput;
     QLabel *cur_file;
@@ -143,11 +143,17 @@ private:
     QPushButton *createTableBtn;
     QPushButton *alterTableBtn;
     QPushButton *dropTableBtn;
+    QPushButton *insertBtn;
+    QPushButton *updateBtn;
+    QPushButton *deleteBtn;
 
     // 图形化建表操作槽函数
     void showCreateTableDialog();
     void showAlterTableDialog();
     void showDropTableDialog();
+    void showInsertDialog();
+    void showUpdateDialog();
+    void showDeleteDialog();
 
 
     // 菜单项

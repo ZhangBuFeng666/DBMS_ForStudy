@@ -226,15 +226,24 @@ void MyMainWindow::createWindow() {
     createTableBtn = new QPushButton("建表");
     alterTableBtn = new QPushButton("改表");
     dropTableBtn = new QPushButton("删表");
+    insertBtn = new QPushButton("插入记录");
+    updateBtn = new QPushButton("更新记录");
+    deleteBtn = new QPushButton("删除记录");
 
     toolBar->addWidget(createTableBtn);
     toolBar->addWidget(alterTableBtn);
     toolBar->addWidget(dropTableBtn);
+    toolBar->addWidget(insertBtn);
+    toolBar->addWidget(updateBtn);
+    toolBar->addWidget(deleteBtn);
 
     // 后续可以绑定图形化建表对话框
     connect(createTableBtn, &QPushButton::clicked, this, &MyMainWindow::showCreateTableDialog);
     connect(alterTableBtn, &QPushButton::clicked, this, &MyMainWindow::showAlterTableDialog);
     connect(dropTableBtn, &QPushButton::clicked, this, &MyMainWindow::showDropTableDialog);
+    connect(insertBtn, &QPushButton::clicked, this, &MyMainWindow::showInsertDialog);
+    connect(updateBtn, &QPushButton::clicked, this, &MyMainWindow::showUpdateDialog);
+    connect(deleteBtn, &QPushButton::clicked, this, &MyMainWindow::showDeleteDialog);
 
 }
 
@@ -356,11 +365,15 @@ void MyMainWindow::executeCmdOrder(int status,QString& command,int index) {
 
     // 3. 删除历史记录时，同时删除对应结果页
     connect(historyWidget, &HistoryItemWidget::requestClose, this, [=]() {
-    int row = historyList->row(item);
-    QWidget *toDelete = resultStack->widget(row);
-    resultStack->removeWidget(toDelete);
-    delete toDelete;
-    delete historyList->takeItem(row);
+        int row = historyList->row(item);
+        if (row >= 0 && row < resultStack->count() && row < historyList->count() && row < historyCommands.size()) {
+            QWidget *toDelete = resultStack->widget(row);
+            resultStack->removeWidget(toDelete);
+            delete toDelete;
+
+            delete historyList->takeItem(row);
+            historyCommands.removeAt(row);
+        }
     });
     }else if(status==2){
             // 替换行为：更新索引对应的内容
@@ -715,6 +728,220 @@ void MyMainWindow::showDropTableDialog() {
     if (ok && !tableName.trimmed().isEmpty()) {
         QString dropSQL = QString("DROP TABLE %1;").arg(tableName.trimmed());
         executeCmdOrder(1,dropSQL);  //  直接执行SQL
+    }
+}
+
+void MyMainWindow::showInsertDialog() {
+    QDialog dialog(this);
+    dialog.setWindowTitle("插入记录");
+
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+
+    QComboBox* tableSelector = new QComboBox();
+    QMap<QString, QTreeWidgetItem*> tableMap;
+
+    for (int i = 0; i < dbTreeView->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* dbItem = dbTreeView->topLevelItem(i);
+        for (int j = 0; j < dbItem->childCount(); ++j) {
+            QTreeWidgetItem* tableItem = dbItem->child(j);
+            QString tableName = tableItem->text(0);
+            tableSelector->addItem(tableName);
+            tableMap[tableName] = tableItem;
+        }
+    }
+
+    QWidget* fieldWidget = new QWidget();
+    QFormLayout* formLayout = new QFormLayout(fieldWidget);
+    QMap<QString, QLineEdit*> fieldInputs;
+
+    auto loadFields = [&](const QString& tableName) {
+        QTreeWidgetItem* tableItem = tableMap[tableName];
+        while (QLayoutItem* item = formLayout->takeAt(0)) {
+            if (QWidget* widget = item->widget()) {
+                widget->deleteLater();
+            }
+            delete item;
+        }
+
+        fieldInputs.clear();
+
+        for (int i = 0; i < tableItem->childCount(); ++i) {
+            QString fieldName = tableItem->child(i)->text(0);
+            QLineEdit* input = new QLineEdit();
+            formLayout->addRow(fieldName + ":", input);
+            fieldInputs[fieldName] = input;
+        }
+    };
+
+    connect(tableSelector, &QComboBox::currentTextChanged, loadFields);
+    if (tableSelector->count() > 0)
+        loadFields(tableSelector->currentText());
+
+    QPushButton* okBtn = new QPushButton("插入");
+    QPushButton* cancelBtn = new QPushButton("取消");
+    QHBoxLayout* btnLayout = new QHBoxLayout();
+    btnLayout->addWidget(okBtn);
+    btnLayout->addWidget(cancelBtn);
+
+    layout->addWidget(new QLabel("选择表："));
+    layout->addWidget(tableSelector);
+    layout->addWidget(fieldWidget);
+    layout->addLayout(btnLayout);
+
+    connect(cancelBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(okBtn, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QString tableName = tableSelector->currentText();
+        QStringList fields, values;
+        for (auto it = fieldInputs.begin(); it != fieldInputs.end(); ++it) {
+            // QString rawField = it.key();
+            // QString field = rawField.section(':', 0, 0).trimmed();
+            QString val = it.value()->text().trimmed();
+            // fields << field;
+            values << (val.isEmpty() ? "NULL" : val );
+        }
+
+        QString sql = QString("INSERT INTO %1 VALUES (%3);")
+                          .arg(tableName, values.join(", "));
+        executeCmdOrder(1,sql);
+    }
+}
+
+
+void MyMainWindow::showUpdateDialog() {
+    QDialog dialog(this);
+    dialog.setWindowTitle("更新记录");
+
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+
+    QComboBox* tableSelector = new QComboBox();
+    QMap<QString, QTreeWidgetItem*> tableMap;
+
+    for (int i = 0; i < dbTreeView->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* dbItem = dbTreeView->topLevelItem(i);
+        for (int j = 0; j < dbItem->childCount(); ++j) {
+            QTreeWidgetItem* tableItem = dbItem->child(j);
+            QString tableName = tableItem->text(0);
+            tableSelector->addItem(tableName);
+            tableMap[tableName] = tableItem;
+        }
+    }
+
+    QWidget* fieldWidget = new QWidget();
+    QFormLayout* formLayout = new QFormLayout(fieldWidget);
+    QMap<QString, QLineEdit*> fieldInputs;
+
+    QLineEdit* conditionEdit = new QLineEdit();
+    conditionEdit->setPlaceholderText("例如 id = 3");
+
+    auto loadFields = [&](const QString& tableName) {
+        QTreeWidgetItem* tableItem = tableMap[tableName];
+        fieldInputs.clear();
+        QLayoutItem* item;
+        while ((item = formLayout->takeAt(0))) {
+            delete item->widget();
+            delete item;
+        }
+
+        for (int i = 0; i < tableItem->childCount(); ++i) {
+            QString fieldName = tableItem->child(i)->text(0);
+            QLineEdit* input = new QLineEdit();
+            input->setPlaceholderText("留空表示不修改");
+            formLayout->addRow(fieldName + ":", input);
+            fieldInputs[fieldName] = input;
+        }
+    };
+
+    connect(tableSelector, &QComboBox::currentTextChanged, loadFields);
+    if (tableSelector->count() > 0)
+        loadFields(tableSelector->currentText());
+
+    QPushButton* okBtn = new QPushButton("更新");
+    QPushButton* cancelBtn = new QPushButton("取消");
+    QHBoxLayout* btnLayout = new QHBoxLayout();
+    btnLayout->addWidget(okBtn);
+    btnLayout->addWidget(cancelBtn);
+
+    layout->addWidget(new QLabel("选择表："));
+    layout->addWidget(tableSelector);
+    layout->addWidget(fieldWidget);
+    layout->addWidget(new QLabel("WHERE 条件："));
+    layout->addWidget(conditionEdit);
+    layout->addLayout(btnLayout);
+
+    connect(cancelBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(okBtn, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QString tableName = tableSelector->currentText();
+        QStringList assignments;
+        for (auto it = fieldInputs.begin(); it != fieldInputs.end(); ++it) {
+            QString rawCol = it.key();
+            QString col = rawCol.section(':',0,0).trimmed();
+            QString val = it.value()->text().trimmed();
+            if (!val.isEmpty())
+                assignments << QString("%1 = %2").arg(col, val);
+        }
+
+        QString condition = conditionEdit->text().trimmed();
+        if (assignments.isEmpty()) {
+            QMessageBox::warning(this, "空内容", "至少填写一个字段要修改");
+            return;
+        }
+
+        QString sql = QString("UPDATE %1 SET %2").arg(tableName, assignments.join(", "));
+        if (!condition.isEmpty())
+            sql += " WHERE " + condition;
+        sql += ";";
+
+        executeCmdOrder(1,sql);
+    }
+}
+
+
+void MyMainWindow::showDeleteDialog() {
+    QDialog dialog(this);
+    dialog.setWindowTitle("删除记录");
+
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+
+    QComboBox* tableSelector = new QComboBox();
+    for (int i = 0; i < dbTreeView->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* dbItem = dbTreeView->topLevelItem(i);
+        for (int j = 0; j < dbItem->childCount(); ++j) {
+            tableSelector->addItem(dbItem->child(j)->text(0));
+        }
+    }
+
+    QLineEdit* conditionEdit = new QLineEdit();
+    conditionEdit->setPlaceholderText("WHERE 条件，例如 id = 3");
+
+    QPushButton* okBtn = new QPushButton("删除");
+    QPushButton* cancelBtn = new QPushButton("取消");
+    QHBoxLayout* btnLayout = new QHBoxLayout();
+    btnLayout->addWidget(okBtn);
+    btnLayout->addWidget(cancelBtn);
+
+    layout->addWidget(new QLabel("选择表："));
+    layout->addWidget(tableSelector);
+    layout->addWidget(new QLabel("WHERE 条件："));
+    layout->addWidget(conditionEdit);
+    layout->addLayout(btnLayout);
+
+    connect(cancelBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(okBtn, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QString tableName = tableSelector->currentText();
+        QString condition = conditionEdit->text().trimmed();
+        if (condition.isEmpty()) {
+            QMessageBox::warning(this, "危险操作", "请填写 WHERE 条件以避免全表删除！");
+            return;
+        }
+
+        QString sql = QString("DELETE FROM %1 WHERE %2;").arg(tableName, condition);
+        executeCmdOrder(1,sql);
     }
 }
 
