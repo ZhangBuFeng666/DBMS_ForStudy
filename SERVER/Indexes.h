@@ -83,9 +83,7 @@ private:
 
 public:
     BPlusInternalNode() : BPlusNode(false) {}
-    ~BPlusInternalNode() {
-        for (auto child : children) delete child;
-    }
+    ~BPlusInternalNode() {}
 };
 
 // ================== B+Ê÷Àà ==================

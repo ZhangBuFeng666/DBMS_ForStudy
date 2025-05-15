@@ -218,7 +218,17 @@ bool process_sql(const string& sql,
             }
             else {
                 cout << "尝试从表 '" << cmd.fromTable << "' 查询数据..." << endl;
+
+                auto start = std::chrono::high_resolution_clock::now();
+
                 SelectResult result = db.select_from_table(cmd); // 执行查询
+
+                auto end = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+
+                std::cout << "SELECT执行时间: " << duration.count() << " 微秒" << std::endl;
+
                 print_select_result(result); // 打印结果表格
                 success = result.success; // 获取执行状态
             }
@@ -260,11 +270,12 @@ bool process_sql(const string& sql,
     return success;
 }
 
+
 // --- (main 函数保持不变，但可以加入更多 SELECT 测试) ---
 void test() {
-    //SQLInterface db;
-    //SQLParser parser;
-    //string currentDbName = "myTestDB"; // 使用之前的数据库名
+    SQLInterface db;
+    SQLParser parser;
+    string currentDbName = "alice"; // 数据库名
 
     //cout << "--- 微型数据库管理系统初始化 ---" << endl;
     //FileManager& fm = db.getFileManager(); // 获取文件管理器
@@ -277,7 +288,10 @@ void test() {
     //process_sql("DROP TABLE students;", db, parser, currentDbName);
     //process_sql("DROP TABLE courses;", db, parser, currentDbName);
     //process_sql("CREATE TABLE students (sid INT PRIMARY KEY, sname CHAR(50), age INT, major CHAR(30));", db, parser, currentDbName);
-    //process_sql("INSERT INTO students VALUES (101, '爱丽丝', 21, '计算机');", db, parser, currentDbName);
+    for (int i = 5000; i < 100000; i++) {
+        string str = "INSERT INTO myfriends VALUES ("+to_string(i)+"," + to_string(i)+");";
+        process_sql(str, db, parser, currentDbName);
+    }//
     //process_sql("INSERT INTO students VALUES (103, '查理', 21, '艺术');", db, parser, currentDbName); // 年龄 21
     //process_sql("INSERT INTO students VALUES (102, '鲍勃', 23, '土木');", db, parser, currentDbName);
     //process_sql("INSERT INTO students VALUES (104, '戴安娜', 19, '国关');", db, parser, currentDbName);
@@ -621,3 +635,8 @@ int main() {
     return 0;
 }
 */
+
+//int main() {
+//    test();
+//    return 0;
+//}

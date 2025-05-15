@@ -10,7 +10,7 @@ using namespace mySocket;
 using namespace logs;
 
 int main() {
-    ;
+    
     try {
         platform::socket_lib_init();
         Server my_server(6666, 10);

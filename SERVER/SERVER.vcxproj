@@ -131,29 +131,20 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="BPlusTree.cpp" />
-    <ClCompile Include="BufferManager.cpp" />
     <ClCompile Include="Logger.cpp" />
     <ClCompile Include="Client.cpp" />
     <ClCompile Include="DiffPlat.cpp" />
     <ClCompile Include="DiffPlat.h" />
     <ClCompile Include="FileManager.cpp" />
-    <ClCompile Include="Foreign.cpp" />
-    <ClCompile Include="Identity.cpp" />
-    <ClCompile Include="LockManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="SQLInterface.cpp" />
     <ClCompile Include="SQLParser.cpp" />
     <ClCompile Include="test.cpp" />
     <ClCompile Include="ThreadPool.cpp" />
-    <ClCompile Include="NotNull.cpp" />
     <ClCompile Include="ObjectTypes.cpp" />
-    <ClCompile Include="Others.cpp" />
-    <ClCompile Include="Primary.cpp" />
-    <ClCompile Include="RecoverManager.cpp" />
     <ClCompile Include="Server.cpp" />
     <ClCompile Include="SocketManager.cpp" />
     <ClCompile Include="Tools.cpp" />
-    <ClCompile Include="Unique.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Client.h" />

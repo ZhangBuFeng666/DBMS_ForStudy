@@ -323,7 +323,7 @@ bool SQLInterface::check_login(const std::string& username, const std::string& p
             if (ss >> fileUser >> filePass) { // 至少要读到用户名和密码
                 if (fileUser == username && filePass == password) {
                     dataFile.close();
-                    cout << "调试: 用户 '" << username << "' 登录验证成功。" << endl;
+                    cout << "用户 '" << username << "' 登录验证成功。" << endl;
                     return true; // 找到匹配的用户和密码
                 }
             }
@@ -335,7 +335,7 @@ bool SQLInterface::check_login(const std::string& username, const std::string& p
         return false;
     }
 
-    cerr << "调试: 用户 '" << username << "' 登录验证失败 (用户名或密码错误)。" << endl;
+    cerr << "用户 '" << username << "' 登录验证失败 (用户名或密码错误)。" << endl;
     return false; // 遍历完文件未找到匹配项
 }
 
@@ -2105,7 +2105,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
 
     }
     else { // 单表 SELECT 查询
-        std::cout << "调试: 执行单表 SELECT 查询。" << std::endl;
+        //std::cout << "调试: 执行单表 SELECT 查询。" << std::endl;
         // ===========================================================================================================================================================================================
         // 在这里粘贴并整合之前可工作的单表 SELECT 查询的完整代码逻辑
         // 即 (SelectResult SQLInterface::select_from_table...)
@@ -2187,7 +2187,6 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         // --- 3. 数据获取与过滤 ---
         std::vector<std::vector<std::string>> filteredDataRows; // 存储最终通过所有过滤条件的、已解析的行
         bool used_index = false;
-
         if (cmd.hasWhere && cmd.whereConditions.conditions.size() == 1 &&
             cmd.whereConditions.logicalOperators.empty() &&
             !cmd.whereConditions.conditions[0].useIsNullClause &&
@@ -2290,12 +2289,15 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                     // 为了保持当前代码的简单性，我们先只处理单个条件。
                     // 你可以之后扩展这个逻辑以支持 `col >= A AND col <= B`。
 
+
                     if (condition_is_index_compatible) {
                         std::cout << "调试: 准备调用索引。表: " << cmd.fromTable
                             << ", 列: " << where_column_name
                             <<( LeftIsOpen?"(":"[") << start_input_for_index
                             << "," << end_input_for_index <<( RightIsOpen?")":"]")<< "," << "操作符为:" << cond.op << std::endl;
                         try {
+                            auto start = std::chrono::high_resolution_clock::now();//////性能检查起点
+
                             std::vector<std::string> indexed_row_strings = LongtoString(rangeQueryAuto(
                                 cmd.fromTable,
                                 where_column_name,
@@ -2306,6 +2308,10 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                             ),cmd.fromTable,cmd.dbName);
                             used_index = true;
                             std::cout << "调试: 索引查询返回 " << indexed_row_strings.size() << " 行。" << std::endl;
+
+                            auto end = std::chrono::high_resolution_clock::now();/////////性能检查终点
+                            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+                            std::cout << "执行时间: " << duration.count() << " 微秒" << std::endl;
 
                             int indexed_col_original_idx = colNameToIndex.count(where_column_name) ? colNameToIndex.at(where_column_name) : -1;
 
@@ -2373,6 +2379,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         if (!used_index) {
             // ... (这里的全表扫描逻辑和你之前的一样，使用 evaluate_single_condition) ...
             // ... (它会填充 filteredDataRows) ...
+
             std::cout << "调试: 执行全表扫描和WHERE过滤。" << std::endl;
             std::string dataPath = COMMONDATA_ROOT +cmd.dbName+"/" + cmd.fromTable + ".trd";
             bool dataFileExists = fs::exists(dataPath);
@@ -2389,8 +2396,14 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                     return result;
                 }
             }
+            auto start = std::chrono::high_resolution_clock::now();//////性能检查起点
 
             std::vector<std::string> dataLines = readLinesFromFile(dataPath);
+
+            auto end = std::chrono::high_resolution_clock::now();/////////性能检查终点
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            std::cout << "执行时间: " << duration.count() << " 微秒" << std::endl;
+
             int lineNum = 0;
             for (const std::string& line : dataLines) {
                 lineNum++;
@@ -2499,7 +2512,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         }
 
         result.success = true;
-        std::cout << "调试: 单表 SELECT 查询成功结束。" << std::endl;
+        //std::cout << "调试: 单表 SELECT 查询成功结束。" << std::endl;
         // ====================================================================
         // 单表查询逻辑结束
         // ====================================================================

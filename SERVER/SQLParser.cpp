@@ -545,7 +545,7 @@ void SQLParser::parse_select_list(const std::string& selectListStr, SQLCommand& 
     // 检查是否为 "*" (选择所有列)
     if (listStr == "*") {
         cmd.selectColumns.push_back("*");
-        cout << "调试: 解析 SELECT * (所有列)。" << endl;
+        //cout << "调试: 解析 SELECT * (所有列)。" << endl;
         return;
     }
 
@@ -572,7 +572,7 @@ void SQLParser::parse_select_list(const std::string& selectListStr, SQLCommand& 
           cerr << "警告: 解析 SELECT 列列表时出错，或列表为空/格式无效: '" << selectListStr << "'" << endl;
           // 此时 cmd.selectColumns 会是空的
      } else if (columnsFound) {
-         cout << "调试: 解析 SELECT 列列表: " << parsedColsStr << endl;
+         //cout << "调试: 解析 SELECT 列列表: " << parsedColsStr << endl;
      }
 }
 
@@ -874,7 +874,7 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
             cmd.orderByColumn = ""; // 没有 ORDER BY 子句
         }
 
-        cout << "调试: SELECT 语句解析成功。" << endl;
+        //cout << "调试: SELECT 语句解析成功。" << endl;
         return cmd; // SELECT 命令解析成功
     }
 

@@ -15,9 +15,6 @@
     <Filter Include="源文件\Network">
       <UniqueIdentifier>{86cc195e-8369-4bf2-adb8-09ddd4579d8b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\Constraints">
-      <UniqueIdentifier>{a16cdc73-65b0-4731-855e-ebf28cc3a57e}</UniqueIdentifier>
-    </Filter>
     <Filter Include="源文件\Common">
       <UniqueIdentifier>{75f1a8be-266a-4735-a300-4aad668793ce}</UniqueIdentifier>
     </Filter>
@@ -66,29 +63,8 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Unique.cpp">
-      <Filter>源文件\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="Foreign.cpp">
-      <Filter>源文件\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="NotNull.cpp">
-      <Filter>源文件\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="Primary.cpp">
-      <Filter>源文件\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="Others.cpp">
-      <Filter>源文件\Constraints</Filter>
-    </ClCompile>
-    <ClCompile Include="BufferManager.cpp">
-      <Filter>源文件\Storage</Filter>
-    </ClCompile>
     <ClCompile Include="FileManager.cpp">
       <Filter>源文件\Storage</Filter>
-    </ClCompile>
-    <ClCompile Include="Identity.cpp">
-      <Filter>源文件\Security</Filter>
     </ClCompile>
     <ClCompile Include="ThreadPool.cpp">
       <Filter>源文件\Security</Filter>
@@ -97,12 +73,6 @@
       <Filter>源文件\Network</Filter>
     </ClCompile>
     <ClCompile Include="Logger.cpp">
-      <Filter>源文件\Log</Filter>
-    </ClCompile>
-    <ClCompile Include="RecoverManager.cpp">
-      <Filter>源文件\Log</Filter>
-    </ClCompile>
-    <ClCompile Include="LockManager.cpp">
       <Filter>源文件\Log</Filter>
     </ClCompile>
     <ClCompile Include="BPlusTree.cpp">
