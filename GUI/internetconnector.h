@@ -31,7 +31,7 @@ signals:
     void sendOrder(const QString &qstr);
 
     //外部用接收并显示数据
-    void recvMessage();
+    //void recvMessage();
 
     // void stopListening();
     // void startListening();

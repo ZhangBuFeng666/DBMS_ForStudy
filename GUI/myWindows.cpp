@@ -5,7 +5,7 @@ LoginWindow::LoginWindow(InternetConnector *connector,QWidget *parent) : QWidget
     this->connector = connector;
 
     setWindowTitle("登录");
-    setFixedSize(500, 250);
+    setFixedSize(250, 250);
 
     // 加载背景图片
     // QPalette palette;
@@ -13,19 +13,41 @@ LoginWindow::LoginWindow(InternetConnector *connector,QWidget *parent) : QWidget
     // palette.setBrush(QPalette::Window, background);
     // this->setPalette(palette);
 
-    QLabel* tip=new QLabel("",this);
-    tip->setGeometry(180,50,150,20);
+    QVBoxLayout* mainLayout = new QVBoxLayout(this);
+
+    // 第一行：ID 标签 + 输入框
+    QVBoxLayout* userLayout = new QVBoxLayout();
     usernameLabel = new QLabel("ID:", this);
-    usernameLabel->setGeometry(20,50,30,20);
     usernameEdit = new QLineEdit(this);
-    usernameEdit->setGeometry(20,70,130,20);
+    userLayout->addWidget(usernameLabel);
+    userLayout->addWidget(usernameEdit);
+
+    // 第二行：密码标签 + 输入框
+    QVBoxLayout* passLayout = new QVBoxLayout();
     passwordLabel = new QLabel("密码:", this);
-    passwordLabel->setGeometry(20,100,30,20);
-    passwordEdit = new QLineEdit(this);/////////////////////////////////////////////////////////////////
-    passwordEdit->setGeometry(20,120,130,20);
+    passwordEdit = new QLineEdit(this);
     passwordEdit->setEchoMode(QLineEdit::Password);
+    passLayout->addWidget(passwordLabel);
+    passLayout->addWidget(passwordEdit);
+
+    // 第三行：登录按钮（居中）
     loginButton = new QPushButton("登录", this);
-    loginButton->setGeometry(60,170,100,30);
+    QVBoxLayout* btnLayout = new QVBoxLayout();
+    btnLayout->addStretch();
+    btnLayout->addWidget(loginButton);
+    btnLayout->addStretch();
+
+    // 可选提示标签
+    QLabel* tip = new QLabel("", this);
+
+    // 加入主布局
+    mainLayout->addWidget(tip);
+    mainLayout->addLayout(userLayout);
+    mainLayout->addLayout(passLayout);
+    mainLayout->addLayout(btnLayout);
+
+    setLayout(mainLayout);
+
 
     connect(loginButton, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
     connect(passwordEdit,&QLineEdit::returnPressed, this, &LoginWindow::onLoginClicked);
@@ -99,16 +121,24 @@ void MyMainWindow::createLayout() {
     middleSplitter->setSizes(QList<int>() << 250 << 350);
 
     // 左边数据库结构树
+    treeWidget = new QWidget();
+    QVBoxLayout *treeLayout = new QVBoxLayout();
+    flashTreeBtn = new QPushButton("刷新结构");
     dbTreeView = new QTreeWidget();
     dbTreeView->setHeaderLabel("数据库结构");
+    dbTreeView->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    treeLayout->addWidget(flashTreeBtn);
+    treeLayout->addWidget(dbTreeView);
+    treeWidget->setLayout(treeLayout);
+
 
     // 横向主布局
     QSplitter *mainSplitter = new QSplitter(Qt::Horizontal);
-    mainSplitter->addWidget(dbTreeView);
+    mainSplitter->addWidget(treeWidget);
     mainSplitter->addWidget(middleSplitter);
 
     mainSplitter->addWidget(historyPanel);
-    mainSplitter->setStretchFactor(0, 1);
+    mainSplitter->setStretchFactor(0, 2);
     mainSplitter->setStretchFactor(1, 4);
     mainSplitter->setStretchFactor(2, 1);
 
@@ -244,7 +274,6 @@ void MyMainWindow::createWindow() {
     connect(insertBtn, &QPushButton::clicked, this, &MyMainWindow::showInsertDialog);
     connect(updateBtn, &QPushButton::clicked, this, &MyMainWindow::showUpdateDialog);
     connect(deleteBtn, &QPushButton::clicked, this, &MyMainWindow::showDeleteDialog);
-
 }
 
 void MyMainWindow::checkForCmdEnd() {
@@ -442,6 +471,7 @@ MyMainWindow::MyMainWindow(InternetConnector *connector,QWidget *parent)
     connect(refreshAllBtn,&QPushButton::clicked, this, &MyMainWindow::refreshAllHistory);
     connect(refreshThisBtn, &QPushButton::clicked, this, &MyMainWindow::refreshThisHistory);
     connect(clearHistoryBtn, &QPushButton::clicked, this, &MyMainWindow::clearHistory);
+    connect(flashTreeBtn,&QPushButton::clicked,this,&MyMainWindow::flashDBTree);
 
 
 
@@ -474,6 +504,10 @@ void MyMainWindow::onTreeItemDoubleClicked(QTreeWidgetItem *item) {
 
 }
 
+void MyMainWindow::flashDBTree(){
+    updateDBTree();
+}
+
 void MyMainWindow::showCreateTableDialog() {
     QDialog dialog(this);
     dialog.setWindowTitle("建表");
@@ -485,7 +519,7 @@ void MyMainWindow::showCreateTableDialog() {
 
     QLabel* fieldLabel = new QLabel("字段定义：");
     QTableWidget* fieldTable = new QTableWidget(0, 6);
-    fieldTable->setHorizontalHeaderLabels({"列名", "类型", "长度", "主键", "非空", "外键"});
+    fieldTable->setHorizontalHeaderLabels({"列名", "类型", "长度", "主键", "非空","唯一"});
     fieldTable->horizontalHeader()->setStretchLastSection(true);
     fieldTable->setSelectionBehavior(QAbstractItemView::SelectRows);
 
@@ -510,8 +544,6 @@ void MyMainWindow::showCreateTableDialog() {
     layout->addWidget(fieldLabel);
     layout->addWidget(fieldTable);
     layout->addLayout(fieldBtnLayout);
-    layout->addWidget(new QLabel("表级约束（可选）："));
-    layout->addWidget(tableConstraintEdit);
     layout->addLayout(btnLayout);
 
     auto addRow = [&]() {
@@ -530,7 +562,7 @@ void MyMainWindow::showCreateTableDialog() {
 
         fieldTable->setCellWidget(row, 3, new QCheckBox());  // 主键
         fieldTable->setCellWidget(row, 4, new QCheckBox());  // 非空
-        fieldTable->setCellWidget(row, 5, new QCheckBox());  // 外键
+        fieldTable->setCellWidget(row, 5, new QCheckBox());  // 唯一
     };
     connect(addRowBtn, &QPushButton::clicked, addRow);
     addRow(); // 初始一行
@@ -567,14 +599,14 @@ void MyMainWindow::showCreateTableDialog() {
 
             bool isPK = qobject_cast<QCheckBox*>(fieldTable->cellWidget(i, 3))->isChecked();
             bool notNull = qobject_cast<QCheckBox*>(fieldTable->cellWidget(i, 4))->isChecked();
-            bool isFK = qobject_cast<QCheckBox*>(fieldTable->cellWidget(i, 5))->isChecked();
+            bool isUnique = qobject_cast<QCheckBox*>(fieldTable->cellWidget(i, 5))->isChecked();
 
             if (!name.isEmpty()) {
                 QString colDef = name + " " + type;
                 if (notNull) colDef += " NOT NULL";
                 columnDefs << colDef;
                 if (isPK) primaryKeys << name;
-                if (isFK) constraints << QString("FOREIGN KEY(%1) REFERENCES ref_table(ref_column)").arg(name);
+                if (isUnique) constraints << QString(" UNIQUE");
             }
         }
 

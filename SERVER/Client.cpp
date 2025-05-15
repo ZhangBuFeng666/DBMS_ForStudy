@@ -100,11 +100,12 @@ void ClientSession::client_handle_recv() {
                         case RecvStatusType::Logout: {
                             is_logged_in = 0;
                             current_database = "";
+                            return_json["Status"] = u8"Success";
                             break;
                         }
 
                         case RecvStatusType::Login: {
-                            if (is_logged_in) { // 如果已登录，则不允许重复登录（虽然没必要）
+                            if (is_logged_in) { // 如果已登录，则不允许重复登录
                                 return_json["Status"] = u8"Failure";
                                 return_json["Mass"] = u8"错误: 用户已登录!";
                                 break;

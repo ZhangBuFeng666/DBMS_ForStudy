@@ -56,6 +56,7 @@ void InternetConnector::logout() {
         {"Mass", ""}
     };
     sendMassage(logoutRequest);
+    receiveMassage();
 }
 
 

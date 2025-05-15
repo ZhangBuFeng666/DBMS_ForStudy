@@ -1644,7 +1644,6 @@ bool SQLInterface::validateValueType(const string& type, const string& value) {
 
 // --- 新增 SELECT 实现 ---
 
-
 SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
     SelectResult result;
     //(初始错误检查)

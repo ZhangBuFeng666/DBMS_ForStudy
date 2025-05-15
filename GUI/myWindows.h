@@ -108,7 +108,10 @@ private slots:
     void ExitLogin();
 
     //双击树状图节点
-        void onTreeItemDoubleClicked(QTreeWidgetItem *item);
+    void onTreeItemDoubleClicked(QTreeWidgetItem *item);
+
+    //刷新数据库结构
+    void flashDBTree();
 
 private:
 
@@ -136,6 +139,8 @@ private:
     QPushButton *saveBtn;
 
     // 图形化相关组件
+    QWidget *treeWidget;
+    QPushButton *flashTreeBtn;             //刷新键
     QTreeWidget *dbTreeView;              // 左侧树状图
     QTableWidget *queryResultTable;      // 下部结果表格
 
