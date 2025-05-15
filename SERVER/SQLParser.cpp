@@ -365,72 +365,287 @@ void SQLParser::parse_set_clause(const std::string& setClauseStr, SQLCommand& cm
 // --- 修改 parse_where_clause 以支持 = 和 IN ---
 // 参数: whereClauseStrFull - 包含 "WHERE" 关键字的完整子句字符串
 // 返回: true 如果解析成功 (即使是空条件), false 如果格式错误
+
+
+//bool SQLParser::parse_where_clause(const std::string& whereClauseStrFull, SQLCommand& cmd) {
+//    string whereClause = trim(whereClauseStrFull); // 去除首尾空白
+//    cmd.hasWhere = false; // 重置状态
+//    cmd.useInClause = false;
+//    cmd.whereColumn = "";
+//    cmd.whereValue = "";
+//    cmd.inValues.clear();
+//    cmd.useIsNullClause = false;
+//    cmd.isNot = false;
+//
+//    //if (whereClause.empty() || whereClause.rfind("WHERE", 0) != 0) {
+//    //    if (!whereClause.empty()) {
+//    //        cerr << "错误: 无效的 WHERE 子句格式 (缺少 WHERE 关键字?): " << whereClauseStrFull << endl;
+//    //        return false;
+//    //    }
+//    //    return true;
+//    //}
+//
+//    // 修改正则表达式支持 >, >=, <, <=
+//    regex whereCompRegex(R"(WHERE\s+(\w+)\s*(<>|>=|<=|=|>|<)\s*(?:'((?:[^']|'')*)'|([^; ]+))\s*;?)", regex::icase);
+//    smatch matchComp;
+//    if (regex_match(whereClause, matchComp, whereCompRegex)) {
+//        cmd.hasWhere = true;
+//        cmd.useInClause = false;
+//        cmd.whereColumn = matchComp[1].str();
+//        cmd.whereOperator = matchComp[2].str();
+//        if (matchComp[3].matched) {
+//            cmd.whereValue = regex_replace(matchComp[3].str(), regex("''"), "'");
+//        }
+//        else if (matchComp[4].matched) {
+//            cmd.whereValue = trim(matchComp[4].str());
+//        }
+//        else {
+//            cmd.hasWhere = false;
+//            cerr << "错误: WHERE 子句中无法解析值部分。" << endl;
+//            return false;
+//        }
+//        cout << "调试: 解析 WHERE 成功。列: " << cmd.whereColumn << ", 运算符: "
+//            << cmd.whereOperator << ", 值: '" << cmd.whereValue << "'" << endl;
+//        return true;
+//    }
+//
+//    regex whereInRegex(R"(WHERE\s+(\w+)\s+IN\s*\((.*?)\)\s*;?)", regex::icase);
+//    smatch matchIn;
+//    if (regex_match(whereClause, matchIn, whereInRegex)) {
+//        cmd.hasWhere = true; // 确认有有效的 WHERE 条件
+//        cmd.useInClause = true;
+//        cmd.whereColumn = matchIn[1].str();
+//        cmd.inValues = split_values(matchIn[2].str());
+//        cout << "调试: 解析 WHERE IN 成功。列: " << cmd.whereColumn << endl;
+//        return true;
+//    }
+//
+//    regex whereIsNullRegex(R"(WHERE\s+(\w+)\s+IS\s+(NOT\s+)?NULL\s*;?)", regex::icase);
+//    smatch matchIsNull;
+//    if (regex_match(whereClause, matchIsNull, whereIsNullRegex)) {
+//        cmd.hasWhere = true;
+//        cmd.useIsNullClause = true;
+//        cmd.whereColumn = matchIsNull[1].str();
+//        cmd.isNot = matchIsNull[2].matched;
+//        cout << "调试: 解析 WHERE IS " << (cmd.isNot ? "NOT " : "") << "NULL 成功" << endl;
+//        return true;
+//    }
+//
+//    cerr << "错误: 无法解析 WHERE 子句" << endl;
+//    return false;
+//}
+
+// In SQLParser.cpp
+
+// (确保你的 SQLCommand 结构体定义了 WhereConditions, Condition 等)
+// (确保你的 split_values, trim, iequals 函数是正确的)
+
 bool SQLParser::parse_where_clause(const std::string& whereClauseStrFull, SQLCommand& cmd) {
-    string whereClause = trim(whereClauseStrFull); // 去除首尾空白
-    cmd.hasWhere = false; // 重置状态
-    cmd.useInClause = false;
-    cmd.whereColumn = "";
-    cmd.whereValue = "";
-    cmd.inValues.clear();
-    cmd.useIsNullClause = false;
-    cmd.isNot = false;
+    cmd.hasWhere = false;
+    cmd.whereConditions.conditions.clear();
+    cmd.whereConditions.logicalOperators.clear();
 
-    //if (whereClause.empty() || whereClause.rfind("WHERE", 0) != 0) {
-    //    if (!whereClause.empty()) {
-    //        cerr << "错误: 无效的 WHERE 子句格式 (缺少 WHERE 关键字?): " << whereClauseStrFull << endl;
-    //        return false;
-    //    }
-    //    return true;
-    //}
+    std::string whereContent = trim(whereClauseStrFull);
+    // std::cout << "DEBUG Parser: Initial whereClauseStrFull: [" << whereClauseStrFull << "]" << std::endl;
 
-    // 修改正则表达式支持 >, >=, <, <=
-    regex whereCompRegex(R"(WHERE\s+(\w+)\s*(<>|>=|<=|=|>|<)\s*(?:'((?:[^']|'')*)'|([^; ]+))\s*;?)", regex::icase);
-    smatch matchComp;
-    if (regex_match(whereClause, matchComp, whereCompRegex)) {
+    if (whereContent.empty()) {
+        return true; // No WHERE clause string provided.
+    }
+
+    // 移除 "WHERE " 前缀 (忽略大小写)
+    std::regex wherePrefixRegex(R"(^WHERE\s+)", std::regex::icase);
+    if (std::regex_search(whereContent, wherePrefixRegex)) { // Check if "WHERE " exists
+        whereContent = std::regex_replace(whereContent, wherePrefixRegex, "");
+        whereContent = trim(whereContent);
+    }
+    else {
+        // If it doesn't start with "WHERE ", it's not a valid WHERE clause for this function's purpose
+        std::cerr << "错误: WHERE子句格式无效 (缺少'WHERE'关键字或后面无内容): [" << whereClauseStrFull << "]" << std::endl;
+        return false; // Or true if an empty string after stripping WHERE is acceptable.
+        // Let's assume it's an error if it was non-empty but didn't become a valid clause.
+    }
+    // std::cout << "DEBUG Parser: whereContent after stripping WHERE prefix: [" << whereContent << "]" << std::endl;
+
+
+    // 去除末尾可能存在的分号 (应该在主 parse 函数中处理整个 SQL 语句的分号)
+    // 但为了健壮性，在这里也处理一下
+    if (!whereContent.empty() && whereContent.back() == ';') {
+        whereContent.pop_back();
+        whereContent = trim(whereContent);
+    }
+    // std::cout << "DEBUG Parser: whereContent after stripping semicolon: [" << whereContent << "]" << std::endl;
+
+    if (whereContent.empty()) {
+        // This means the input was "WHERE" or "WHERE;" -- technically no conditions.
+        // Depending on requirements, this could be an error or just an empty condition set.
+        // For now, let's say if it started with WHERE, cmd.hasWhere should be true.
         cmd.hasWhere = true;
-        cmd.useInClause = false;
-        cmd.whereColumn = matchComp[1].str();
-        cmd.whereOperator = matchComp[2].str();
-        if (matchComp[3].matched) {
-            cmd.whereValue = regex_replace(matchComp[3].str(), regex("''"), "'");
+        // std::cout << "信息 Parser: WHERE 关键字后没有条件。" << std::endl;
+        return true; // Parsed "WHERE", but no actual conditions followed.
+    }
+    cmd.hasWhere = true;
+
+    std::string remainingClause = whereContent;
+    bool expectCondition = true;
+
+    while (!remainingClause.empty()) {
+        remainingClause = trim(remainingClause);
+        if (remainingClause.empty()) break;
+        // std::cout << "DEBUG Parser: Loop start. Remaining: [" << remainingClause << "], Expecting Condition: " << expectCondition << std::endl;
+
+        if (expectCondition) {
+            SQLCommand::Condition current_cond;
+            bool condition_parsed = false;
+
+            // Order of attempts: IS NULL/IS NOT NULL, IN, then general comparison.
+
+            // 1. 尝试匹配 IS [NOT] NULL
+            std::smatch isNullMatch;
+            std::regex isNullRegex(R"(([\w.]+)\s+IS\s+(NOT\s+)?NULL\b)", std::regex::icase);
+            if (std::regex_search(remainingClause, isNullMatch, isNullRegex, std::regex_constants::match_continuous)) {
+                current_cond.columnName = trim(isNullMatch[1].str());
+                current_cond.useIsNullClause = true;
+                current_cond.isNotNull = isNullMatch[2].matched;
+                current_cond.op = current_cond.isNotNull ? "IS NOT NULL" : "IS NULL";
+                cmd.whereConditions.conditions.push_back(current_cond);
+                remainingClause = trim(isNullMatch.suffix().str());
+                condition_parsed = true;
+                // std::cout << "DEBUG Parser: Parsed IS [NOT] NULL. Col: " << current_cond.columnName << ". Remaining: [" << remainingClause << "]" << std::endl;
+            }
+            else {
+                // 2. 尝试匹配 IN (...) 或 NOT IN (...)
+                std::smatch inMatch;
+                std::regex inRegex(R"(([\w.]+)\s+(NOT\s+)?IN\s*\(\s*(.*?)\s*\)\b)", std::regex::icase);
+                // Grp1: col, Grp2: NOT (opt), Grp3: values
+                if (std::regex_search(remainingClause, inMatch, inRegex, std::regex_constants::match_continuous)) {
+                    current_cond.columnName = trim(inMatch[1].str());
+                    current_cond.useInClause = true;
+                    current_cond.inValues = split_values(inMatch[3].str()); // Values are in group 3
+                    current_cond.op = inMatch[2].matched ? "NOT IN" : "IN"; // Set operator based on NOT
+                    // cmd.isNot = inMatch[2].matched; // If you have a separate isNot for IN
+                    cmd.whereConditions.conditions.push_back(current_cond);
+                    remainingClause = trim(inMatch.suffix().str());
+                    condition_parsed = true;
+                    // std::cout << "DEBUG Parser: Parsed " << current_cond.op << ". Col: " << current_cond.columnName << ". Remaining: [" << remainingClause << "]" << std::endl;
+                }
+                else {
+                    // 3. 尝试匹配: column_name OPERATOR value
+                    std::smatch compMatch;
+                    // Regex designed to match one full "col op val" where val can be quoted or unquoted (number, NULL, identifier)
+                    // It stops before AND/OR or end of string.
+                    std::regex singleCompRegex( // 使用上面修正后的单行版本
+                        R"(([\w.]+)\s*(<>|>=|<=|=|!=|>|<)\s*)"
+                        R"((?:'((?:[^']|'')*)'|(NULL)|([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|([\w.-]+)))"
+                        , std::regex::icase);
+
+                    if (std::regex_search(remainingClause, compMatch, singleCompRegex, std::regex_constants::match_continuous)) {
+                        current_cond.columnName = trim(compMatch[1].str());
+                        current_cond.op = trim(compMatch[2].str());
+
+                        if (compMatch[3].matched) { // 带引号的值
+                            current_cond.value = std::regex_replace(compMatch[3].str(), std::regex("''"), "'");
+                            current_cond.isValueQuoted = true;
+                        }
+                        else if (compMatch[4].matched) { // 字面量 NULL
+                            current_cond.value = ""; // Represent NULL as empty string internally
+                            current_cond.isValueQuoted = false; // It was the keyword NULL, not an empty string ' '
+                        }
+                        else if (compMatch[5].matched) { // 数字
+                            current_cond.value = trim(compMatch[5].str());
+                            current_cond.isValueQuoted = false;
+                        }
+                        else if (compMatch[6].matched) { // 单词/标识符
+                            std::string unquoted_val = trim(compMatch[6].str());
+                            // Check if this unquoted identifier is actually "NULL"
+                            if (iequals(unquoted_val, "NULL")) {
+                                current_cond.value = ""; // Treat as NULL
+                            }
+                            else {
+                                current_cond.value = unquoted_val;
+                            }
+                            current_cond.isValueQuoted = false;
+                        }
+                        else {
+                            // This case should ideally not be reached if the regex alternatives cover all valid value types.
+                            std::cerr << "错误: WHERE 比较条件中值部分未被任何模式捕获 (after col/op): [" << remainingClause << "]" << std::endl;
+                            cmd.hasWhere = false; return false; // Indicate parsing failure
+                        }
+                        cmd.whereConditions.conditions.push_back(current_cond);
+                        remainingClause = trim(compMatch.suffix().str());
+                        condition_parsed = true;
+                        // std::cout << "DEBUG Parser: Parsed Comp. Col: " << current_cond.columnName
+                        //           << ", Op: " << current_cond.op
+                        //           << ", Val: '" << current_cond.value << "'"
+                        //           << ", Quoted: " << current_cond.isValueQuoted
+                        //           << ". Remaining: [" << remainingClause << "]" << std::endl;
+                    }
+                } // End of IN else
+            } // End of IS NULL else
+
+            if (!condition_parsed) {
+                std::cerr << "错误: 无法解析WHERE子句中的条件部分: [" << remainingClause << "]" << std::endl;
+                // cmd.type = SQLCommand::UNKNOWN; // Set by caller if this returns false
+                cmd.hasWhere = false; // Since we failed to parse the content of a WHERE clause
+                return false;
+            }
+            expectCondition = false;
+        } // End if(expectCondition)
+        else { // Expect logical operator (AND/OR) or end of clause
+            std::smatch logicOpMatch;
+            std::regex logicOpRegex(R"((AND|OR)\b)", std::regex::icase);
+            if (std::regex_search(remainingClause, logicOpMatch, logicOpRegex, std::regex_constants::match_continuous)) {
+                std::string op_str = logicOpMatch[1].str();
+                std::transform(op_str.begin(), op_str.end(), op_str.begin(), ::toupper);
+                cmd.whereConditions.logicalOperators.push_back(op_str);
+                remainingClause = trim(logicOpMatch.suffix().str());
+                expectCondition = true;
+                // std::cout << "DEBUG Parser: Parsed Logic Op: " << op_str << ". Remaining: [" << remainingClause << "]" << std::endl;
+            }
+            else {
+                // If not AND/OR, and remainingClause is not empty, it's an error in syntax.
+                // If remainingClause IS empty, it's a valid end to the WHERE clause.
+                if (!remainingClause.empty()) {
+                    std::cerr << "错误: WHERE子句中期望AND/OR，但得到: [" << remainingClause << "]" << std::endl;
+                    // cmd.type = SQLCommand::UNKNOWN;
+                    cmd.hasWhere = true; // We had conditions, but syntax error after
+                    return false; // Syntax error
+                }
+                // else, remainingClause is empty, so we just break the loop.
+            }
         }
-        else if (matchComp[4].matched) {
-            cmd.whereValue = trim(matchComp[4].str());
+    } // End while loop
+
+    // Final validation checks
+    if (cmd.hasWhere) { // Only perform these checks if we parsed something after "WHERE"
+        if (cmd.whereConditions.conditions.empty()) {
+            // This implies "WHERE" was present but no conditions followed, or initial parsing failed.
+            // The `whereContent.empty()` check after stripping "WHERE" should ideally handle this.
+            // If we reach here and conditions are empty, it's likely an issue.
+            // std::cerr << "信息 Parser: WHERE子句被标记但未找到有效条件。" << std::endl;
+            // `cmd.hasWhere` would be true, but `conditions` empty. This is a valid state (e.g. "SELECT * FROM T WHERE;")
+            // but might indicate a flaw if `whereContent` was non-empty initially.
+            // No, if conditions is empty, it's like "WHERE ;" -> hasWhere becomes true, but conditions are empty. This is fine.
         }
-        else {
-            cmd.hasWhere = false;
-            cerr << "错误: WHERE 子句中无法解析值部分。" << endl;
+
+        // If expectCondition is true here, it means the clause ended with AND/OR
+        // but only if there were logical operators to begin with.
+        if (expectCondition && !cmd.whereConditions.logicalOperators.empty()) {
+            std::cerr << "错误: WHERE子句以逻辑运算符 '" << cmd.whereConditions.logicalOperators.back() << "' 结束，缺少后续条件。" << std::endl;
             return false;
         }
-        cout << "调试: 解析 WHERE 成功。列: " << cmd.whereColumn << ", 运算符: "
-            << cmd.whereOperator << ", 值: '" << cmd.whereValue << "'" << endl;
-        return true;
-    }
 
-    regex whereInRegex(R"(WHERE\s+(\w+)\s+IN\s*\((.*?)\)\s*;?)", regex::icase);
-    smatch matchIn;
-    if (regex_match(whereClause, matchIn, whereInRegex)) {
-        cmd.hasWhere = true; // 确认有有效的 WHERE 条件
-        cmd.useInClause = true;
-        cmd.whereColumn = matchIn[1].str();
-        cmd.inValues = split_values(matchIn[2].str());
-        cout << "调试: 解析 WHERE IN 成功。列: " << cmd.whereColumn << endl;
-        return true;
+        // Number of conditions vs operators
+        if (!cmd.whereConditions.logicalOperators.empty() &&
+            (cmd.whereConditions.conditions.size() != cmd.whereConditions.logicalOperators.size() + 1)) {
+            std::cerr << "错误: WHERE子句中条件数量 (" << cmd.whereConditions.conditions.size()
+                << ") 与逻辑运算符数量 (" << cmd.whereConditions.logicalOperators.size()
+                << ") 不匹配。" << std::endl;
+            return false;
+        }
     }
-
-    regex whereIsNullRegex(R"(WHERE\s+(\w+)\s+IS\s+(NOT\s+)?NULL\s*;?)", regex::icase);
-    smatch matchIsNull;
-    if (regex_match(whereClause, matchIsNull, whereIsNullRegex)) {
-        cmd.hasWhere = true;
-        cmd.useIsNullClause = true;
-        cmd.whereColumn = matchIsNull[1].str();
-        cmd.isNot = matchIsNull[2].matched;
-        cout << "调试: 解析 WHERE IS " << (cmd.isNot ? "NOT " : "") << "NULL 成功" << endl;
-        return true;
-    }
-
-    cerr << "错误: 无法解析 WHERE 子句" << endl;
-    return false;
+    // std::cout << "DEBUG Parser: WHERE 子句解析完成。 条件数: " << cmd.whereConditions.conditions.size()
+    //          << ", 逻辑运算符数: " << cmd.whereConditions.logicalOperators.size() << std::endl;
+    return true;
 }
 
 // --- 新增：解析 SELECT 列列表 ---
@@ -685,7 +900,60 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
         
        
     }
-    // 8. 解析SELECT语句
+    // 8. 解析SELECT语句————————————先join，再无join
+    //有join
+    std::regex selectWithJoinRegex(
+        R"(SELECT\s+(DISTINCT\s+)?(.*?)\s+FROM\s+(\w+)\s+)"               // SELECT(opt_distinct) cols(2) FROM table1(3)
+        R"((?:INNER\s+)?JOIN\s+(\w+)\s+ON\s+([\w\.]+)\s*(<>|>=|<=|=|>|<)\s*([\w\.]+))" // (opt_INNER) JOIN table2(4) ON col1_expr(5) CAPTURED_OPERATOR(6) col2_expr(7)
+        R"(\s*(WHERE\s+.*?)?(ORDER\s+BY\s+.*?)?\s*;?\s*$)",               // Optional WHERE(8) Optional ORDER_BY(9)
+        std::regex::icase
+    );
+    // 捕获组说明:
+    // match[1]: DISTINCT (可选)
+    // match[2]: 列列表 (e.g., "col1, table1.col2")
+    // match[3]: 第一个表名 (table1)
+    // match[4]: 第二个表名 (table2)
+    // match[5]: ON 条件左侧列 (e.g., "table1.colA")
+    // \s*(<>|>=|<=|=|>|<)\s*: 捕获比较运算符（<>, >=, <=, =, >, <）（捕获组6）。
+    // match[7]: ON 条件右侧列 (e.g., "table2.colB")
+    // match[8]: WHERE 子句 (可选)
+    // match[9]: ORDER BY 子句 (可选)
+    if (std::regex_match(sql, match, selectWithJoinRegex)) {
+        cmd.type = SQLCommand::SELECT;
+        cmd.distinct = match[1].matched; // 可选的 DISTINCT
+        parse_select_list(match[2].str(), cmd); // 解析选择的列
+        cmd.fromTable = match[3].str();     // 第一个表名 (table1)
+
+        cmd.hasJoin = true;
+        // 基于匹配到的 "JOIN" 或 "INNER JOIN" 设置 joinType
+        // (一个简单的检查，可以根据您的具体需求调整)
+        std::string full_join_clause_match_for_type_check = match[0].str(); // 获取整个匹配的字符串来检查 "INNER"
+        
+        cmd.joinType = "INNER"; // 或者固定为 "INNER" 因为目前只支持内连接
+
+        cmd.joinTable = match[4].str();           // 第二个表名 (table2)
+        cmd.joinOnConditionLeft = match[5].str(); // ON 条件的左侧列
+        cmd.joinOperator = match[6].str();        // **** 新增：捕获到的比较运算符 ****
+        cmd.joinOnConditionRight = match[7].str();// ON 条件的右侧列
+
+        // 注意：WHERE 和 ORDER BY 子句的捕获组索引会向后移动
+        if (match[8].matched) { // WHERE 子句现在是捕获组 8
+            cmd.whereClauseStr = trim(match[8].str());
+            if (!parse_where_clause(cmd.whereClauseStr, cmd)) {
+                std::cerr << "错误: 解析 SELECT (JOIN) 语句中的 WHERE 子句失败。" << std::endl;
+                cmd.type = SQLCommand::UNKNOWN;
+            }
+        }
+        if (match[9].matched) { // ORDER BY 子句现在是捕获组 9
+            if (!parse_order_by_clause(match[9].str(), cmd)) {
+                std::cerr << "错误: 解析 SELECT (JOIN) 语句中的 ORDER BY 子句失败。" << std::endl;
+                cmd.type = SQLCommand::UNKNOWN;
+            }
+        }
+        return cmd;
+    }
+
+    //无join，即单表
     regex selectRegex(R"(SELECT\s+(DISTINCT\s+)?(.*?)\s+FROM\s+(\w+)\s*(WHERE\s+.*?)?(ORDER\s+BY\s+.*?)?\s*;?\s*$)", regex::icase);
     if (regex_match(sql, match, selectRegex)) {
         cmd.type = SQLCommand::SELECT;
@@ -733,6 +1001,23 @@ SQLCommand SQLParser::parse(const string& sqlInput) {
         return cmd; // SELECT 命令解析成功
     }
 
+    //解析 CREATE INDEX index_name ON table_name(column_name)
+    regex createIndexRegex(R"(CREATE\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*\(\s*(\w+)\s*\)\s*;?)", regex::icase);
+    if (regex_match(sql, match, createIndexRegex)) {
+        cmd.type = SQLCommand::CREATE_INDEX;
+        cmd.indexName = match[1];
+        cmd.tableName = match[2];
+        cmd.columnName = match[3];
+        return cmd;
+    }
+    //解析 DROP INDEX index_name ON table_name
+    regex dropIndexRegex(R"(DROP\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*;?)", regex::icase);
+    if (regex_match(sql, match, dropIndexRegex)) {
+        cmd.type = SQLCommand::DROP_INDEX;
+        cmd.indexName = match[1];
+        cmd.tableName = match[2];
+        return cmd;
+    }
 
     // 如果没有任何模式匹配成功
     cerr << "错误: 无法识别的 SQL 命令: " << sql << endl;

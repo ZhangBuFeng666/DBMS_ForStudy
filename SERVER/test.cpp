@@ -8,6 +8,7 @@
 #include <stdexcept> // 用于异常处理
 #include <iomanip>   // 用于格式化输出 (setw)
 #include <algorithm> // 用于 max
+#include"Indexes.h"
 
 // 使用命名空间
 using namespace std;
@@ -193,12 +194,12 @@ bool process_sql(const string& sql,
         }
         case SQLCommand::UPDATE: {
             if (cmd.tableName.empty() || cmd.setClauses.empty() || !cmd.hasWhere) { cerr << "错误: 无效的 UPDATE 语句 (缺少表名、SET 或 WHERE 子句)。" << endl; success = false; } // 确保 hasWhere 为 true
-            else { cout << "尝试更新表 '" << cmd.tableName << "' 中 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; /* ... (打印 SET 子句) ... */ success = db.update_table_row(cmd.dbName, cmd.tableName, cmd.setClauses, cmd.whereColumn, cmd.whereValue); }
+            else { cout << "尝试更新表 '" << cmd.tableName << "' 中 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; /* ... (打印 SET 子句) ... */ success = db.update_table_row(cmd); }
             break;
         }
         case SQLCommand::DELETE_NEW: {
             if (cmd.tableName.empty() || !cmd.hasWhere) { cerr << "错误: 无效的 DELETE 语句 (缺少表名或 WHERE 子句)。" << endl; success = false; } // 确保 hasWhere 为 true
-            else { cout << "尝试从表 '" << cmd.tableName << "' 中删除 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; success = db.delete_table_row(cmd.dbName, cmd.tableName, cmd.whereColumn, cmd.whereValue); }
+            else { cout << "尝试从表 '" << cmd.tableName << "' 中删除 WHERE " << cmd.whereColumn << (cmd.useInClause ? " IN (...)" : " = '" + cmd.whereValue + "'") << " 的行" << endl; success = db.delete_table_row(cmd); }
             break;
         }
         case SQLCommand::ALTER: {
@@ -223,6 +224,27 @@ bool process_sql(const string& sql,
             }
             break; // 不要忘记 break!
 
+        case SQLCommand::CREATE_INDEX:
+            if (cmd.tableName.empty() || cmd.columnName.empty() || cmd.indexName.empty()) {
+                cerr<< "错误: 无效的 CREATE INDEX 命令。"<<endl;
+                success = false;
+            }
+            else {
+                success = create_index(cmd.tableName, cmd.columnName, cmd.indexName);
+                std::cout <<(success ? ("索引 '" + cmd.indexName + "' 创建成功。") : ("错误: 创建索引 '" + cmd.indexName + "' 失败。"))<<std::endl;
+            }
+            break;
+        case SQLCommand::DROP_INDEX:
+            if (cmd.indexName.empty() || cmd.tableName.empty())
+            {
+                cerr << "错误: 无效的 CREATE INDEX 命令。" << endl;;
+                success = false;
+            }
+            else {
+                success = drop_index(cmd.indexName);
+                cerr << (success ? "索引 '" + cmd.indexName + "' 删除成功。" : "错误: 删除索引 '" + cmd.indexName + "' 失败。") << endl;
+            }
+            break;
         case SQLCommand::UNKNOWN:
         default:
             cerr << "错误: 无法解析 SQL 语句或命令类型未知。" << endl;
@@ -332,8 +354,8 @@ void run_constraint_tests() {
     // (可以通过 print_metadata 或手动检查 .tid 文件来验证)
     // print_metadata(currentDbName, "products", db); // 如果你有这个函数
 
-    // 1.2 测试重复主键定义 (应该在解析层面失败)
-    process_sql("CREATE TABLE departments (dept_id INT PRIMARY KEY, dept_name CHAR(20) PRIMARY KEY);", db, parser, currentDbName);
+    //// 1.2 测试
+    process_sql("CREATE TABLE departments (dept_id INT PRIMARY KEY, dept_name CHAR(20));", db, parser, currentDbName);
     // 预期: SQLParser 层面报错 "Error: Multiple PRIMARY KEY constraints defined for table." 并设置命令为 UNKNOWN，导致 process_sql 失败。
 
     // 1.3 创建一个简单的表用于后续测试
@@ -343,7 +365,12 @@ void run_constraint_tests() {
     //       ename: not_null 1
     //       salary: unique 3
 
-
+    // === 2. 插入测试数据 ===
+//    std::cout << "\n--- 2. 插入测试数据 ---" << std::endl;
+    // 插入部门数
+    process_sql("INSERT INTO departments VALUES (101, '研发部');", db, parser, currentDbName);
+    process_sql("INSERT INTO departments VALUES (102, '市场部');", db, parser, currentDbName);
+    process_sql("INSERT INTO departments VALUES (103, '人事部');", db, parser, currentDbName);
     // === 2. 测试 INSERT INTO 与约束 ===
     std::cout << "\n--- 2. 测试 INSERT INTO 与约束 (表: employees) ---" << std::endl;
     // 2.1 成功插入
@@ -351,7 +378,9 @@ void run_constraint_tests() {
     process_sql("INSERT INTO employees VALUES (2, 'Bob', 102, 60000);", db, parser, currentDbName);   // 预期: 成功
     process_sql("INSERT INTO employees VALUES (3, 'Carol', 101, NULL);", db, parser, currentDbName); // 预期: 成功 (salary UNIQUE允许NULL)
     process_sql("INSERT INTO employees VALUES (4, 'David', 103, NULL);", db, parser, currentDbName); // 预期: 成功 (salary UNIQUE允许另一个NULL)
-    process_sql("SELECT * FROM employees;", db, parser, currentDbName);
+    process_sql("SELECT * FROM employees where eid = 1 and dept_id = 101;", db, parser, currentDbName);
+
+    
 
     // 2.2 主键冲突
     process_sql("INSERT INTO employees VALUES (1, 'Eve', 104, 70000);", db, parser, currentDbName);
@@ -369,11 +398,20 @@ void run_constraint_tests() {
 
     process_sql("SELECT * FROM employees;", db, parser, currentDbName); // 查看当前数据
 
+    // 3.1 内连接测试
+    std::cout << "\n--- 3.1 内连接测试 ---" << std::endl;
+    process_sql("SELECT * FROM employees join departments on employees.dept_id = departments.dept_id;", db, parser, currentDbName);
+    process_sql("SELECT * FROM employees join departments on employees.dept_id = departments.dept_id where departments.dept_id > 101;", db, parser, currentDbName);
+    process_sql("SELECT * FROM employees join departments on employees.dept_id > departments.dept_id where departments.dept_id > 101;", db, parser, currentDbName);
+    process_sql("SELECT dept_id,dept_name FROM employees join departments on employees.dept_id = departments.dept_id where departments.dept_id = 101 or departments.dept_id = 103;", db, parser, currentDbName);
+
     // === 3. 测试 UPDATE 与约束 ===
     std::cout << "\n--- 3. 测试 UPDATE 与约束 (表: employees) ---" << std::endl;
+    process_sql("SELECT * FROM employees;", db, parser, currentDbName);
     // 3.1 成功更新 (不违反约束)
     process_sql("UPDATE employees SET salary = 65000 WHERE eid = 2;", db, parser, currentDbName); // Bob's salary to 65000
     // 预期: 成功
+    process_sql("SELECT * FROM employees;", db, parser, currentDbName);
     process_sql("UPDATE employees SET dept_id = 102 WHERE ename = 'Alice';", db, parser, currentDbName); // Alice to dept 102
     // 预期: 成功
     process_sql("SELECT * FROM employees;", db, parser, currentDbName);
@@ -402,7 +440,7 @@ void run_constraint_tests() {
     // 3.6 更新主键列为一个新的唯一值 (应该成功)
     process_sql("UPDATE employees SET eid = 10 WHERE eid = 1;", db, parser, currentDbName); // Alice's eid from 1 to 10
     // 预期: 成功
-    process_sql("SELECT * FROM employees WHERE eid = 10 OR eid = 1;", db, parser, currentDbName);
+    process_sql("SELECT * FROM employees join departments on departments.dept_id = employees.dept_id WHERE eid = 10 ;", db, parser, currentDbName);
 
 
     // === 4. 测试 ALTER TABLE DROP COLUMN 与约束 ===
@@ -428,41 +466,155 @@ void run_constraint_tests() {
     process_sql("CREATE TABLE employees (eid INT PRIMARY KEY, ename CHAR(50) NOT NULL, dept_id INT, salary INT UNIQUE);", db, parser, currentDbName);
     process_sql("INSERT INTO employees VALUES (1001, 'TestUser', 200, 10000);", db, parser, currentDbName);
 
+    //process_sql("CREATE INDEX idIndex on products(pid);", db, parser, currentDbName);
+    //process_sql("DROP INDEX idIndex on products", db, parser, currentDbName);
 
-    // === 5. 更多边界情况和组合 ===
-    std::cout << "\n--- 5. 更多边界情况和组合 (表: products) ---" << std::endl;
-    // products (pid INT PRIMARY KEY, pname CHAR(50) NOT NULL UNIQUE, price INT NOT NULL, category CHAR(30) UNIQUE)
-    process_sql("INSERT INTO products VALUES (1, 'Laptop', 1200, 'Electronics');", db, parser, currentDbName); //成功
-    process_sql("INSERT INTO products VALUES (2, 'Mouse', 25, 'Electronics');", db, parser, currentDbName); //成功, category重复但允许
-    process_sql("INSERT INTO products VALUES (3, 'Keyboard', 75, NULL);", db, parser, currentDbName); //成功, category UNIQUE允许NULL
 
-    // 5.1 pname (NOT NULL UNIQUE)
-    process_sql("INSERT INTO products VALUES (4, NULL, 200, 'Books');", db, parser, currentDbName);
-    // 预期: 失败 (pname NOT NULL)
-    process_sql("INSERT INTO products VALUES (4, 'Laptop', 200, 'Books');", db, parser, currentDbName);
-    // 预期: 失败 (pname UNIQUE, 'Laptop' 已存在)
-    process_sql("INSERT INTO products VALUES (4, 'Desk', NULL, 'Furniture');", db, parser, currentDbName);
-    // 预期: 失败 (price NOT NULL)
+    //// === 5. 更多边界情况和组合 ===
+    //std::cout << "\n--- 5. 更多边界情况和组合 (表: products) ---" << std::endl;
+    //// products (pid INT PRIMARY KEY, pname CHAR(50) NOT NULL UNIQUE, price INT NOT NULL, category CHAR(30) UNIQUE)
+    //process_sql("INSERT INTO products VALUES (1, 'Laptop', 1200, 'Electronics');", db, parser, currentDbName); //成功
+    //process_sql("INSERT INTO products VALUES (2, 'Mouse', 25, 'Electronics');", db, parser, currentDbName); //成功, category重复但允许
+    //process_sql("INSERT INTO products VALUES (3, 'Keyboard', 75, NULL);", db, parser, currentDbName); //成功, category UNIQUE允许NULL
 
-    // 5.2 更新使得 pname 冲突
-    process_sql("INSERT INTO products VALUES (5, 'Monitor', 300, 'Peripherals');", db, parser, currentDbName);
-    process_sql("UPDATE products SET pname = 'Mouse' WHERE pid = 5;", db, parser, currentDbName);
-    // 预期: 失败 (pname UNIQUE, 'Mouse' 已被 pid=2 使用)
+    //// 5.1 pname (NOT NULL UNIQUE)
+    //process_sql("INSERT INTO products VALUES (4, NULL, 200, 'Books');", db, parser, currentDbName);
+    //// 预期: 失败 (pname NOT NULL)
+    //process_sql("INSERT INTO products VALUES (4, 'Laptop', 200, 'Books');", db, parser, currentDbName);
+    //// 预期: 失败 (pname UNIQUE, 'Laptop' 已存在)
+    //process_sql("INSERT INTO products VALUES (4, 'Desk', NULL, 'Furniture');", db, parser, currentDbName);
+    //// 预期: 失败 (price NOT NULL)
 
-    // 5.3 更新使得 category 冲突 (非NULL时)
-    process_sql("INSERT INTO products VALUES (6, 'Webcam', 50, 'Cameras');", db, parser, currentDbName);
-    process_sql("UPDATE products SET category = 'Electronics' WHERE pid = 6;", db, parser, currentDbName); // 'Electronics'已被pid=1,2使用
-    // 预期: 失败 (category UNIQUE)
+    //// 5.2 更新使得 pname 冲突
+    //process_sql("INSERT INTO products VALUES (5, 'Monitor', 300, 'Peripherals');", db, parser, currentDbName);
+    //process_sql("UPDATE products SET pname = 'Mouse' WHERE pid = 5;", db, parser, currentDbName);
+    //// 预期: 失败 (pname UNIQUE, 'Mouse' 已被 pid=2 使用)
 
-    process_sql("SELECT * FROM products;", db, parser, currentDbName);
+    //// 5.3 更新使得 category 冲突 (非NULL时)
+    //process_sql("INSERT INTO products VALUES (6, 'Webcam', 50, 'Cameras');", db, parser, currentDbName);
+    //process_sql("UPDATE products SET category = 'Electronics' WHERE pid = 6;", db, parser, currentDbName); // 'Electronics'已被pid=1,2使用
+    //// 预期: 失败 (category UNIQUE)
 
-    std::cout << "\n--- 约束功能测试结束 ---" << std::endl;
+    //process_sql("SELECT * FROM products;", db, parser, currentDbName);
+
+    //std::cout << "\n--- 约束功能测试结束 ---" << std::endl;
 }
 
-// 在你的 main 函数中调用:
-//int main() {
-//    // ... (你可能有的其他测试或初始化) ...
-//    run_constraint_tests(); // 调用新的测试函数
-//    // ... (交互式循环等) ...
-//    return 0;
+//void run_constraint_tests() {
+//    SQLInterface db;
+//    SQLParser parser;
+//    std::string currentDbName = "constraintTestDB";
+//
+//    std::cout << "\n\n--- 开始约束功能测试 ---" << std::endl;
+//    db.create_database(currentDbName);
+//    std::cout << "当前数据库设置为: " << currentDbName << std::endl;
+//
+//    // 清理旧表
+//    process_sql("DROP TABLE products;", db, parser, currentDbName);
+//    process_sql("DROP TABLE employees;", db, parser, currentDbName);
+//    process_sql("DROP TABLE departments;", db, parser, currentDbName);
+//
+//    // === 1. 创建测试表 ===
+//    std::cout << "\n--- 1. 创建测试表 ---" << std::endl;
+//    // 创建部门表
+//    process_sql("CREATE TABLE departments (dept_id INT PRIMARY KEY, dept_name CHAR(20) NOT NULL, location CHAR(30));", db, parser, currentDbName);
+//
+//    // 创建员工表，包含外键关联
+//    process_sql("CREATE TABLE employees (eid INT, ename CHAR(50) NOT NULL, dept_id INT, salary INT UNIQUE, "
+//        "FOREIGN KEY (dept_id) REFERENCES departments(dept_id));", db, parser, currentDbName);
+//
+//    // === 2. 插入测试数据 ===
+//    std::cout << "\n--- 2. 插入测试数据 ---" << std::endl;
+//    // 插入部门数据
+//    process_sql("INSERT INTO departments VALUES (101, '研发部', '北京');", db, parser, currentDbName);
+//    process_sql("INSERT INTO departments VALUES (102, '市场部', '上海');", db, parser, currentDbName);
+//    process_sql("INSERT INTO departments VALUES (103, '人事部', '广州');", db, parser, currentDbName);
+//
+//    // 插入员工数据
+//    process_sql("INSERT INTO employees VALUES (1, 'Alice', 101, 50000);", db, parser, currentDbName);
+//    process_sql("INSERT INTO employees VALUES (2, 'Bob', 102, 60000);", db, parser, currentDbName);
+//    process_sql("INSERT INTO employees VALUES (3, 'Carol', 101, 55000);", db, parser, currentDbName);
+//    process_sql("INSERT INTO employees VALUES (4, 'David', 103, 45000);", db, parser, currentDbName);
+//    process_sql("INSERT INTO employees VALUES (5, 'Eve', NULL, 70000);", db, parser, currentDbName); // 无部门的员工
+//
+//    // === 3. 测试连接查询 ===
+//    std::cout << "\n--- 3. 测试连接查询 ---" << std::endl;
+//
+//    // 3.1 内连接测试
+//    std::cout << "\n--- 3.1 内连接测试 ---" << std::endl;
+//    process_sql("SELECT * FROM employees join departments on employees.dept_id = departments.dept_id;", db, parser, currentDbName);
+
+    //// 3.2 左外连接测试
+    //std::cout << "\n--- 3.2 左外连接测试 ---" << std::endl;
+    //process_sql("SELECT e.eid, e.ename, d.dept_name, d.location "
+    //    "FROM employees e LEFT OUTER JOIN departments d ON e.dept_id = d.dept_id;",
+    //    db, parser, currentDbName);
+
+    //// 3.3 右外连接测试
+    //std::cout << "\n--- 3.3 右外连接测试 ---" << std::endl;
+    //process_sql("SELECT e.eid, e.ename, d.dept_name, d.location "
+    //    "FROM employees e RIGHT OUTER JOIN departments d ON e.dept_id = d.dept_id;",
+    //    db, parser, currentDbName);
+
+    //// 3.4 全外连接测试
+    //std::cout << "\n--- 3.4 全外连接测试 ---" << std::endl;
+    //process_sql("SELECT e.eid, e.ename, d.dept_name, d.location "
+    //    "FROM employees e FULL OUTER JOIN departments d ON e.dept_id = d.dept_id;",
+    //    db, parser, currentDbName);
+
+    //// 3.5 带条件的连接查询
+    //std::cout << "\n--- 3.5 带条件的连接查询 ---" << std::endl;
+    //process_sql("SELECT e.ename, e.salary, d.dept_name "
+    //    "FROM employees e JOIN departments d ON e.dept_id = d.dept_id "
+    //    "WHERE e.salary > 50000;",
+    //    db, parser, currentDbName);
+
+    //// 3.6 多表连接
+    //std::cout << "\n--- 3.6 多表连接 ---" << std::endl;
+    //// 先创建一个项目表
+    //process_sql("CREATE TABLE projects (pid INT PRIMARY KEY, pname CHAR(50), dept_id INT, "
+    //    "FOREIGN KEY (dept_id) REFERENCES departments(dept_id));", db, parser, currentDbName);
+    //process_sql("INSERT INTO projects VALUES (1, '数据库系统', 101);", db, parser, currentDbName);
+    //process_sql("INSERT INTO projects VALUES (2, '市场推广', 102);", db, parser, currentDbName);
+
+    //process_sql("SELECT e.ename, d.dept_name, p.pname "
+    //    "FROM employees e "
+    //    "JOIN departments d ON e.dept_id = d.dept_id "
+    //    "JOIN projects p ON d.dept_id = p.dept_id;",
+    //    db, parser, currentDbName);
+
+    //// === 4. 测试连接查询中的约束 ===
+    //std::cout << "\n--- 4. 测试连接查询中的约束 ---" << std::endl;
+
+    //// 4.1 测试连接查询中的主键约束
+    //process_sql("SELECT d.dept_id, COUNT(e.eid) as employee_count "
+    //    "FROM departments d LEFT JOIN employees e ON d.dept_id = e.dept_id "
+    //    "GROUP BY d.dept_id;",
+    //    db, parser, currentDbName);
+
+    //// 4.2 测试连接查询中的唯一约束
+    //process_sql("SELECT e1.ename as employee1, e2.ename as employee2, e1.salary "
+    //    "FROM employees e1 JOIN employees e2 ON e1.salary = e2.salary AND e1.eid < e2.eid;",
+    //    db, parser, currentDbName);
+
+    //// 4.3 测试连接查询中的外键约束
+    //process_sql("SELECT e.ename, d.dept_name "
+    //    "FROM employees e JOIN departments d ON e.dept_id = d.dept_id "
+    //    "WHERE e.dept_id IS NOT NULL;",
+    //    db, parser, currentDbName);
+
+//    // 清理测试数据库
+//    std::cout << "\n--- 测试完成，清理数据库 ---" << std::endl;
+//    process_sql("DROP TABLE projects;", db, parser, currentDbName);
+//    process_sql("DROP TABLE employees;", db, parser, currentDbName);
+//    process_sql("DROP TABLE departments;", db, parser, currentDbName);
 //}
+ //在你的 main 函数中调用:
+/*
+int main() {
+    // ... (你可能有的其他测试或初始化) ...
+    run_constraint_tests(); // 调用新的测试函数
+    // ... (交互式循环等) ...
+    return 0;
+}
+*/

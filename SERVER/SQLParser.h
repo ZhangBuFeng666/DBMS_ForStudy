@@ -30,13 +30,44 @@ struct ColumnConstraintInfo {
     bool isUnique = false;
 };
 
+
 // 定义 SQL 命令结构体
 struct SQLCommand {
+
+    // 首先，定义单个条件表达式的结构
+    struct Condition {
+        std::string columnName;
+        std::string op;         // 比较运算符: =, <>, >, <, >=, <=
+        std::string value;      // 比较的值 (如果是字符串，应去除引号)
+        bool isValueQuoted = false; // 标记原始值是否有引号
+
+        bool useInClause = false;
+        std::vector<std::string> inValues;
+
+        bool useIsNullClause = false;
+        bool isNotNull = false; // 如果 useIsNullClause 为 true, isNotNull 为 true 表示 IS NOT NULL
+
+        // (未来可以扩展支持 LIKE 等)
+    };
+
+    // 然后，定义条件组，用于支持 AND/OR
+    struct ConditionGroup {
+        std::vector<Condition> conditions;          // 该组内的简单条件
+        std::vector<std::string> logicalOperators;  // 连接 conditions 的逻辑运算符 ("AND", "OR")
+        // logicalOperators.size() == conditions.size() - 1
+
+    // 为了支持更复杂的嵌套 (例如 WHERE (A AND B) OR C)，您可能需要递归结构:
+    // std::vector<std::variant<Condition, ConditionGroup>> operands;
+    // std::vector<std::string> logicalConnectors; // "AND", "OR"
+    // 但初期可以先从简单的线性 AND/OR 开始
+    };
     // 基本命令类型枚举
     enum CommandType {
         CREATE_TABLE,CREATE_USER, ALTER, DROP,
         INSERT, UPDATE, DELETE_NEW,
         SELECT,
+        CREATE_INDEX,
+        DROP_INDEX,
         UNKNOWN
     } type = UNKNOWN; // 操作类型, 默认为未知
 
@@ -46,6 +77,9 @@ struct SQLCommand {
 
     // --- INSERT 特定字段 ---
     std::vector<std::string> values; // 插入时的字段值列表
+
+    // --- CREATE_INDEX特用字段 ---
+    std::string indexName;
 
     // --- CREATE_TABLE 特定字段 ---
     std::vector<std::pair<std::string, std::string>> fieldDefinitionsWithType; // 字段定义列表 {字段名, 字段类型}
@@ -73,6 +107,9 @@ struct SQLCommand {
     bool useInClause = false;       // 标记 WHERE 子句是否使用 IN
     std::vector<std::string> inValues; // WHERE IN (...) 的值列表
 
+    // 新增：存储解析后的WHERE条件组
+    ConditionGroup whereConditions; // 对于简单的实现，一个 ConditionGroup 可能就够了
+
     // --- ALTER 特定字段 ---
     enum AlterAction { // ALTER TABLE 操作的具体类型
         RENAME_TABLE, ADD_COLUMN, DROP_COLUMN, MODIFY_COLUMN, RENAME_COLUMN, INVALID_ALTER
@@ -88,6 +125,16 @@ struct SQLCommand {
     bool distinct = false;                  // 是否使用 DISTINCT 关键字去重
     std::string orderByColumn;              // ORDER BY 子句指定的排序列名 (如果为空则不排序)
     enum SortOrder { ASC, DESC } sortOrder = ASC; // 排序顺序 (默认 ASC 升序)
+
+    // 新增: JOIN 操作相关字段
+    bool hasJoin = false;                   // 标记是否有 JOIN 子句
+    std::string joinType;                   // JOIN 类型 (例如 "INNER", "LEFT" - 初期可先实现 "INNER")
+    std::string joinTable;                  // JOIN 的第二个表名
+    std::string joinOnConditionLeft;        // ON 条件的左侧列 (例如 "table1.columnA" 或 "columnA")
+    std::string joinOperator;               // **** 新增字段: 用于存储 JOIN ON 条件中的比较运算符 ****
+    std::string joinOnConditionRight;       // ON 条件的右侧列 (例如 "table2.columnB" 或 "columnB")
+    // 注意: 为了处理 table.column 格式，selectColumns, whereColumn, orderByColumn,
+    // joinOnConditionLeft, joinOnConditionRight 中的字符串可能需要存储或能够解析这种格式。
 
 };
 

@@ -16,7 +16,7 @@ namespace platform {
 
     int close_socket(int sockfd) noexcept {
 #ifdef _WIN32
-        return closesocket(sockfd);
+        return closesocket((SOCKET)sockfd); // 强制类型转换
 #else
         return close(sockfd);
 #endif
