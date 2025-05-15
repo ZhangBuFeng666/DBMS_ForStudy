@@ -230,7 +230,7 @@ bool process_sql(const string& sql,
                 success = false;
             }
             else {
-                success = create_index(cmd.tableName, cmd.columnName, cmd.indexName);
+                success = create_index(cmd.tableName, cmd.columnName,cmd.dbName,cmd.indexName);
                 std::cout <<(success ? ("索引 '" + cmd.indexName + "' 创建成功。") : ("错误: 创建索引 '" + cmd.indexName + "' 失败。"))<<std::endl;
             }
             break;
@@ -330,6 +330,7 @@ void run_constraint_tests() {
     SQLInterface db;
     SQLParser parser;
     std::string currentDbName = "constraintTestDB"; // 使用新的数据库名以避免干扰
+    //std::string currentDbName = "alice";
 
     std::cout << "\n\n--- 开始约束功能测试 ---" << std::endl;
     // 确保文件管理器和数据库目录存在
@@ -609,7 +610,9 @@ void run_constraint_tests() {
 //    process_sql("DROP TABLE employees;", db, parser, currentDbName);
 //    process_sql("DROP TABLE departments;", db, parser, currentDbName);
 //}
+
  //在你的 main 函数中调用:
+
 /*
 int main() {
     // ... (你可能有的其他测试或初始化) ...

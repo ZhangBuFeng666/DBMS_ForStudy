@@ -10,30 +10,47 @@
 #include <sstream>
 #include <functional>
 #include <mutex>
+// ================== 类型辅助函数 ==================
+bool isIntegerType(const std::string& columnType);
 
+bool isStringType(const std::string& columnType);
 // ================== 数据类型定义 ==================
 enum class IndexType { INTEGER, STRING };
 
 struct IndexKey {
     std::string key_str;
+    std::string key_type;
 
     bool operator<(const IndexKey& other) const {
-        return key_str < other.key_str;
+        if (isStringType(key_type)) {
+            return key_str < other.key_str;
+        }
+        else {
+            return std::stoi(key_str) < std::stoi(other.key_str);
+        }
     }
     bool operator>(const IndexKey& other) const {
-        return key_str > other.key_str;
+        if (isStringType(key_type)) {
+            return key_str > other.key_str;
+        }
+        else {
+            return std::stoi(key_str) > std::stoi(other.key_str);
+        }
     }
     bool operator==(const IndexKey& other) const {
         return key_str == other.key_str;
     }
+
+    bool operator>=(const IndexKey& other) const {
+        return !(*this < other);
+    }
+
+    bool operator<=(const IndexKey& other) const {
+        return !(*this > other);
+    }
 };
 
 std::ostream& operator<<(std::ostream& os, const IndexKey& key);
-
-// ================== 类型辅助函数 ==================
-bool isIntegerType(const std::string& columnType);
-
-bool isStringType(const std::string& columnType);
 
 IndexType mapColumnType(const std::string& dbType);
 // ================== B+树节点定义 ==================
@@ -81,6 +98,7 @@ private:
     size_t binarySearch(const std::vector<IndexKey>& arr, IndexKey key) const;
     void splitLeaf(BPlusLeafNode* leaf);
     void splitInternal(BPlusInternalNode* node);
+    BPlusLeafNode* getLeftmostLeaf() const;
 
     // 序列化/反序列化辅助函数
     bool serializeValue(std::ostream& out, long value) const;
@@ -95,7 +113,7 @@ public:
     ~BPlusTree();
     void insert(IndexKey key, long value);
     void print() const;
-    std::vector<long> rangeSearch(const IndexKey& start, const IndexKey& end, const std::string& columnType) const;
+    std::vector<long> rangeSearch(const IndexKey& start, const IndexKey& end, const std::string& columnType, bool LeftIsOpen, bool RightIsOpen) const;
 
     bool serialize(std::ostream& out) const;
     bool deserialize(std::istream& in);
@@ -120,7 +138,7 @@ private:
     std::vector<std::string> splitString(const std::string& s, char delimiter);
 
 public:
-    TableProcessor(const std::string& table, const std::string& column);
+    TableProcessor(const std::string& table, const std::string& column, const std::string& dbName);
     std::unique_ptr<BPlusTree> buildIndex();
     std::string getColumnType() const;
 };
@@ -149,25 +167,30 @@ public:
 };
 
 // ================== 索引管理函数 ==================
+std::vector<std::string> SplitString(const std::string& s, char delimiter);
 bool isIndexExist(const std::string& table, const std::string& column, const std::string& indexName);
-bool create_index(const std::string& table_name, const std::string& column_name, const std::string& index_name);
+bool create_index(const std::string& table_name, const std::string& column_name, const std::string& dbName, const std::string& index_name);
 std::string findIndexPath(const std::string& table, const std::string& column);
 std::string getColumnType(const std::string& table, const std::string& column);
 IndexKey createIndexKey(const std::string& table, const std::string& column, const std::string& input);
 std::string findIndexName(const std::string& table, const std::string& column);
 bool drop_index(const std::string& index_name);
-void update_index(const std::string& table_name, const std::string& column_name);
+void update_index(const std::string& table_name, const std::string& column_name, const std::string& dbName);
 std::vector<long> Merge_index(const std::vector<long>& result1, const std::vector<long>& result2);
-std::vector<std::string> LongtoString(const std::vector<long>& position, const std::string& table_name);
+std::vector<std::string> LongtoString(const std::vector<long>& position, const std::string& table_name,const std::string& dbName);
 std::vector<long> rangeQuery(
     const std::string& table,
     const std::string& column,
     const IndexKey& start,
     const IndexKey& end,
-    const std::string& columnType);
+    const std::string& columnType,
+    bool LeftIsOpen,
+    bool RightIsOpen);
 std::vector<long> rangeQueryAuto(
     const std::string& table,
     const std::string& column,
     const std::string& startInput,
-    const std::string& endInput);
+    const std::string& endInput,
+    bool LeftIsOpen,
+    bool RightIsOpen);
 

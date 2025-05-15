@@ -17,6 +17,7 @@
 // 确保命名空间被使用
 using namespace std;
 namespace fs = std::filesystem; // 文件系统命名空间别名
+using RowOffsetToJoinedRowsMap = std::unordered_map<long, std::vector<std::string>>;
 
 
 
@@ -431,7 +432,7 @@ bool SQLInterface::process_sql_command(const std::string& sql, const std::string
             success = false;
         }
         else {
-            success=create_index(cmd.tableName, cmd.columnName, cmd.indexName);
+            success=create_index(cmd.tableName, cmd.columnName,cmd.dbName,cmd.indexName);
             result_message = success ? "索引 '" + cmd.indexName + "' 创建成功。" : "错误: 创建索引 '" + cmd.indexName + "' 失败。";
         }
         break;
@@ -1590,8 +1591,8 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         return result;
     }
 
-    if (cmd.hasJoin && cmd.joinType == "INNER") { // 处理 INNER JOIN
-        std::cout << "调试: 开始执行 INNER JOIN 查询。" << std::endl;
+    if (cmd.hasJoin) { // 处理 JOIN
+        std::cout << "调试: 开始执行JOIN 查询。" << std::endl;
         std::string table1Name = cmd.fromTable;
         std::string table2Name = cmd.joinTable;
 
@@ -1629,7 +1630,6 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         std::vector<std::string> allColumns2 = readLinesFromFile(tdfPath2);
         // std::vector<std::string> allTypes2 = readLinesFromFile(ticPath2); // 如果需要类型信息
         std::vector<std::string> dataLines2 = readLinesFromFile(dataPath2);
-
 
 
         // **** 新增：加载列类型信息 ****
@@ -1672,6 +1672,9 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
 
         std::cout << "调试: 解析 JOIN ON 条件 - 左侧: 表='" << leftOnColParts.first << "', 列='" << leftOnColParts.second << "'" << std::endl;
         std::cout << "调试: 解析 JOIN ON 条件 - 右侧: 表='" << rightOnColParts.first << "', 列='" << rightOnColParts.second << "'" << std::endl;
+        create_index(rightOnColParts.first, rightOnColParts.second, cmd.dbName, "temporaryIndex");
+        
+        
 
         int leftOnColIdx = -1;
         std::string leftOnTable;
@@ -1726,6 +1729,29 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                 return result;
             }
         }
+        RowOffsetToJoinedRowsMap rowOffsetMap;
+        // 遍历表1的每一行
+        for (const auto& line1 : dataLines1) {
+            std::vector<std::string> values1 = SplitString(line1, ','); // 假设数据文件以逗号分隔
+            std::string leftValue = values1[leftOnColIdx];
+
+            // 执行 rangeQueryAuto 查询
+            std::vector<long> queryResult = rangeQueryAuto(rightOnColParts.first, rightOnColParts.second, leftValue, leftValue,false,false);
+            std::string filepath = "DATA/COMMONDATA/" + cmd.dbName + "/" + rightOnColParts.first + ".trd";
+            std::ifstream dataFile(filepath);
+            // 根据查询结果从表2中获取相应的行
+            for (long index : queryResult) {
+                dataFile.seekg(index);
+                std::string record;
+                if (std::getline(dataFile, record)) {
+                    std::vector<std::string>value2 = SplitString(record, ',');
+                    std::string rightValue = value2[rightOnColIdx];
+                    if (leftValue == rightValue) rowOffsetMap[index].push_back(record);
+                }
+            }
+        }
+        drop_index("temporaryIndex");
+
         /*std::string dataPath1 = COMMONDATA_ROOT + table1Name + ".trd";*/
         std::cout << "调试: 表 '" << table1Name << "' 的数据文件路径: " << dataPath1 << std::endl;
         /*std::vector<std::string> dataLines1 = readLinesFromFile(dataPath1);*/
@@ -2175,6 +2201,8 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                 std::cout << "调试: 发现列 '" << where_column_name << "' 的索引，路径: " << index_path << std::endl;
                 std::string start_input_for_index = "*"; // 默认从头/负无穷
                 std::string end_input_for_index = "*";   // 默认到尾/正无穷
+                bool LeftIsOpen = false;
+                bool RightIsOpen = false;//默认区间两边为闭区间
                 bool condition_is_index_compatible = false;
                 std::string indexed_column_type;
 
@@ -2206,6 +2234,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                     //    需要后处理来排除等于 value 的情况
                     else if (cond.op == ">") {
                         start_input_for_index = cond.value;
+                        LeftIsOpen = true;
                         // end_input_for_index 保持 "*"
                         condition_is_index_compatible = true; // 标记需要后处理
                     }
@@ -2220,6 +2249,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                     else if (cond.op == "<") {
                         // start_input_for_index 保持 "*"
                         end_input_for_index = cond.value;
+                        RightIsOpen = true;
                         condition_is_index_compatible = true; // 标记需要后处理
                     }
                     // 注意：如果 SQL 解析器能将 "column BETWEEN val1 AND val2"
@@ -2263,15 +2293,17 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
                     if (condition_is_index_compatible) {
                         std::cout << "调试: 准备调用索引。表: " << cmd.fromTable
                             << ", 列: " << where_column_name
-                            << ", StartInput: '" << start_input_for_index
-                            << "', EndInput: '" << end_input_for_index << "'" << std::endl;
+                            <<( LeftIsOpen?"(":"[") << start_input_for_index
+                            << "," << end_input_for_index <<( RightIsOpen?")":"]")<< "," << "操作符为:" << cond.op << std::endl;
                         try {
                             std::vector<std::string> indexed_row_strings = LongtoString(rangeQueryAuto(
                                 cmd.fromTable,
                                 where_column_name,
                                 start_input_for_index,
-                                end_input_for_index
-                            ),cmd.fromTable);
+                                end_input_for_index,
+                                LeftIsOpen,
+                                RightIsOpen
+                            ),cmd.fromTable,cmd.dbName);
                             used_index = true;
                             std::cout << "调试: 索引查询返回 " << indexed_row_strings.size() << " 行。" << std::endl;
 

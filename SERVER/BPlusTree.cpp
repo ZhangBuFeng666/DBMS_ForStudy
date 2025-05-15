@@ -1,5 +1,6 @@
 #include "Indexes.h"
 #include <unordered_set>
+#include"SQLInterface.h"
 
 // 关键：静态成员变量必须在类外定义！
 std::unordered_map<std::string, std::shared_ptr<BPlusTree>> IndexManager::indexCache;
@@ -92,17 +93,8 @@ std::string getColumnType(const std::string& table, const std::string& column) {
 IndexKey createIndexKey(const std::string& table, const std::string& column, const std::string& input) {
     std::string columnType = getColumnType(table, column);
     IndexKey key;
-    if (isIntegerType(columnType)) {
-        try {
-            key.key_str = std::to_string(std::stoll(input));
-        }
-        catch (...) {
-            key.key_str = input;
-        }
-    }
-    else {
-        key.key_str = input;
-    }
+    key.key_type = columnType;
+    key.key_str = input;
     return key;
 }
 
@@ -111,7 +103,9 @@ std::vector<long> rangeQuery(
     const std::string& column,
     const IndexKey& start,
     const IndexKey& end,
-    const std::string& columnType) {
+    const std::string& columnType,
+    bool LeftIsOpen,
+    bool RightIsOpen) {
     // 获取索引路径
     std::string indexPath = findIndexPath(table, column);
     if (indexPath.empty()) {
@@ -126,7 +120,7 @@ std::vector<long> rangeQuery(
         return {};
     }
 
-    std::vector<long> positions = tree->rangeSearch(start, end, columnType);
+    std::vector<long> positions = tree->rangeSearch(start, end, columnType,LeftIsOpen,RightIsOpen);
     return positions;
 }
 
@@ -152,7 +146,7 @@ std::string findIndexName(const std::string& table, const std::string& column) {
 创建索引
 
 */
-bool create_index(const std::string& table_name, const std::string& column_name, const std::string& index_name) {
+bool create_index(const std::string& table_name, const std::string& column_name, const std::string& dbName, const std::string& index_name) {
     // 检查索引是否已存在（文件或元数据）
     std::string indexPath = "DATA/INDEX/" + index_name + ".bpt";
     if (IndexManager::isIndexExist(indexPath)) {  // 使用 IndexManager 的文件检查
@@ -161,7 +155,7 @@ bool create_index(const std::string& table_name, const std::string& column_name,
     }
 
     // 构建索引（返回 unique_ptr）
-    TableProcessor processor(table_name, column_name);
+    TableProcessor processor(table_name, column_name,dbName);
     std::unique_ptr<BPlusTree> uniqueTree = processor.buildIndex();
     std::string column_type = processor.getColumnType();
 
@@ -192,11 +186,13 @@ std::vector <long> rangeQueryAuto(
     const std::string& table,
     const std::string& column,
     const std::string& startInput,
-    const std::string& endInput) {
+    const std::string& endInput,
+    bool LeftIsOpen,
+    bool RightIsOpen) {
     IndexKey start = createIndexKey(table, column, startInput);
     IndexKey end = createIndexKey(table, column, endInput);
     std::string columnType = getColumnType(table, column);
-    return rangeQuery(table, column, start, end, columnType);
+    return rangeQuery(table, column, start, end, columnType,LeftIsOpen,RightIsOpen);
 }
 /*
 
@@ -256,7 +252,7 @@ bool drop_index(const std::string& index_name) {
 更新索引
 
 */
-void update_index(const std::string& table_name, const std::string& column_name) {
+void update_index(const std::string& table_name, const std::string& column_name,const std::string& dbName) {
     // 第一步：查找对应表名和列名的索引名
     std::string index_name = findIndexName(table_name, column_name);
     if (index_name.empty()) {
@@ -275,7 +271,7 @@ void update_index(const std::string& table_name, const std::string& column_name)
     }
 
     // 第四步：重建索引
-    create_index(table_name, column_name, index_name);
+    create_index(table_name, column_name,dbName,index_name);
 
     // 第五步：检查索引是否成功重建
     if (!IndexManager::isIndexExist(indexPath)) {
@@ -309,8 +305,8 @@ std::vector<long> Merge_index(const std::vector<long>& result1, const std::vecto
 
 */
 
-std::vector<std::string> LongtoString(const std::vector<long>& position, const std::string& table_name) {
-    std::string filepath = "DATA/COMMONDATA/" + table_name + ".trd";
+std::vector<std::string> LongtoString(const std::vector<long>& position, const std::string& table_name, const std::string& dbName) {
+    std::string filepath = "DATA/COMMONDATA/" + dbName + "/" + table_name + ".trd";
     std::ifstream dataFile(filepath);
     std::vector<std::string> records;
 
@@ -568,22 +564,68 @@ void BPlusTree::rebuildLeafLinkedList() {
     link(root);
 }
 
-std::vector<long> BPlusTree::rangeSearch(const IndexKey& start, const IndexKey& end, const std::string& columnType) const {
-    BPlusLeafNode* leaf = findLeaf(start);
+std::vector<long> BPlusTree::rangeSearch(const IndexKey& start, const IndexKey& end, const std::string& columnType, bool LeftIsOpen, bool RightIsOpen) const {
     std::vector<long> results;
-    size_t idx = binarySearch(leaf->keys, start);
-
-    while (leaf) {
-        for (; idx < leaf->keys.size(); ++idx) {
-            const IndexKey& key = leaf->keys[idx];
-            if (key > end) break;
-            results.push_back(leaf->values[idx]);
+    // 情况0：start和end均为"*"，返回整棵树的所有值
+    if (start.key_str == "*" && end.key_str == "*") {
+        BPlusLeafNode* leaf = getLeftmostLeaf();
+        while (leaf) {
+            results.insert(results.end(), leaf->values.begin(), leaf->values.end());
+            leaf = leaf->next;
         }
-        leaf = leaf->next;
-        idx = 0;
+        return results;
     }
 
-    return results;
+    // 情况1：start为"*"（从头查到end）
+    else if (start.key_str == "*") {
+        BPlusLeafNode* leaf = getLeftmostLeaf();
+        if (!leaf) return results;  // 空树
+
+        size_t idx = 0;
+        while (leaf) {
+            for (; idx < leaf->keys.size(); ++idx) {
+                if (leaf->keys[idx] > end) return results;  // 超过end则终止
+                results.push_back(leaf->values[idx]);
+            }
+            leaf = leaf->next;
+            idx = 0;
+        }
+        return results;
+    }
+
+    // 情况2：end为"*"（从start查到结尾）
+    else if (end.key_str == "*") {
+        BPlusLeafNode* leaf = findLeaf(start);
+        if (!leaf) return results;  // start超出范围
+
+        size_t idx = binarySearch(leaf->keys, start);
+        while (leaf) {
+            for (; idx < leaf->keys.size(); ++idx) {
+                results.push_back(leaf->values[idx]);
+            }
+            leaf = leaf->next;
+            idx = 0;
+        }
+        return results;
+    }
+
+    // 情况3：普通范围查询（无通配符）
+    else {
+        BPlusLeafNode* leaf = findLeaf(start);
+        if (!leaf) return results;  // start超出范围
+
+        size_t idx = binarySearch(leaf->keys, start);
+        while (leaf) {
+            for (; idx < leaf->keys.size(); ++idx) {
+                if (leaf->keys[idx] > end) return results;  // 超过end则终止
+                results.push_back(leaf->values[idx]);
+            }
+            leaf = leaf->next;
+            idx = 0;
+        }
+
+        return results;
+    }
 }
 
 // --- 文件序列化与反序列化 ---
@@ -694,12 +736,21 @@ bool BPlusTree::deserializeFromFile(const std::string& filename) {
     return in && deserialize(in);
 }
 
+BPlusLeafNode* BPlusTree::getLeftmostLeaf() const {
+    if (!root) return nullptr;
+    BPlusNode* node = root;
+    while (!node->isLeaf) {
+        node = static_cast<BPlusInternalNode*>(node)->children[0];
+    }
+    return static_cast<BPlusLeafNode*>(node);
+}
+
 // --- TableProcessor 实现 ---
-TableProcessor::TableProcessor(const std::string& table, const std::string& column)
+TableProcessor::TableProcessor(const std::string& table, const std::string& column, const std::string& dbName)
     : tableName(table), columnName(column) {
-    columnsFilePath = "DATA/METADATA/DBATTER/" + tableName + "/" + tableName + ".tdf";
-    typesFilePath = "DATA/METADATA/DBATTER/" + tableName + "/" + tableName + ".tic";
-    dataFilePath = "DATA/COMMONDATA/" + tableName + ".trd";
+    columnsFilePath = "DATA/METADATA/DBATTER/" +dbName + "/" + tableName + "/" + tableName + ".tdf";
+    typesFilePath = "DATA/METADATA/DBATTER/" + dbName + "/" + tableName + "/" + tableName + ".tic";
+    dataFilePath = "DATA/COMMONDATA/" + dbName + "/" + tableName + ".trd";
 }
 
 bool TableProcessor::fileExists(const std::string& filename) {
