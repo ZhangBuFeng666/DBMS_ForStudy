@@ -17,24 +17,6 @@ FileManager::FileManager() {
 
 // === 私有函数实现 ===
 
-// 创建（空的）二进制文件 (当前未使用，保留)
-int FileManager::write_to_file(const std::string& path) {
-    std::ifstream file0(path);
-    if (file0.good()) {
-        file0.close(); // 关闭文件
-        return -1; // 文件已存在
-    }
-    file0.close(); // 确保文件已关闭
-
-    std::ofstream file(path, std::ios::binary); // 以二进制模式创建
-    if (!file.is_open()) {
-        cerr << "错误: 无法创建文件: " << path << endl;
-        return 0; // 创建失败
-    }
-    file.close(); // 立即关闭，创建一个空文件
-    return 1; // 创建成功
-}
-
 // === 公共函数实现 ===
 
 //// 创建新表，包括定义文件(.tdf), 类型文件(.tic), 约束文件(.tid) 和数据文件(.trd)
@@ -149,24 +131,24 @@ bool FileManager::create_table(
     // 假设 METADATA_ROOT 和 COMMON_ROOT 是成员变量 this->METADATA_ROOT, this->COMMON_ROOT
     // 或者通过其他方式获取
     std::string resolved_metadata_root = "DATA/METADATA/DBATTER/"; // 替换为实际的获取方式
-    std::string resolved_common_root = "DATA/COMMONDATA/";       // 替换为实际的获取方式
+    std::string tableDataPath = "DATA/COMMONDATA/"+ dbName + "/";       // 替换为实际的获取方式
 
 
     std::string dbMetaPath = resolved_metadata_root + dbName + "/";
     std::string tableMetaPath = dbMetaPath + tableName + "/";
-    std::string tableDataPath = resolved_common_root + tableName + ".trd";
+    //std::string tableDataPath = resolved_common_root ;
 
     cout << "调试: 创建表路径信息 -" << endl;
     cout << "  元数据目录: " << tableMetaPath << endl;
-    cout << "  数据文件:   " << tableDataPath << endl;
+    cout << "  数据文件路径:   " << tableDataPath << endl;
 
     // 1. 创建数据库和表的元数据目录
     if (!create_directory(tableMetaPath)) {
         cerr << "错误: 创建表元数据目录失败: " << tableMetaPath << endl;
         return false;
     }
-    if (!create_directory(resolved_common_root)) {
-        cerr << "错误: 创建通用数据目录失败: " << resolved_common_root << endl;
+    if (!create_directory(tableDataPath)) {
+        cerr << "错误: 创建通用数据目录失败: " << tableDataPath << endl;
         return false;
     }
     cout << "FileManager::create_table - columnConstraints.size(): " << columnConstraints.size() << endl;
@@ -190,7 +172,7 @@ bool FileManager::create_table(
     ofstream tdfFile(tdfFilePath);
     ofstream ticFile(tableMetaPath + tableName + ".tic");
     ofstream tidFile(tableMetaPath + tableName + ".tid");
-    ofstream trdFile(tableDataPath);
+    ofstream trdFile(tableDataPath+ tableName +".trd");
 
     if (!tdfFile.is_open()) { cerr << "错误: 无法打开 .tdf 文件: " << tdfFilePath << endl; return false; }
     if (!ticFile.is_open()) { cerr << "错误: 无法打开 .tic 文件。" << endl; tdfFile.close(); return false; }
@@ -303,7 +285,7 @@ bool FileManager::create_table(
 bool FileManager::delete_table(const std::string& dbName, const std::string& tableName) {
     std::string dbMetaPath = METADATA_ROOT + dbName + "/";
     std::string tableMetaPath = dbMetaPath + tableName + "/"; // 表的元数据目录
-    std::string tableDataPath = COMMON_ROOT + tableName + ".trd"; // 数据文件路径
+    std::string tableDataPath = COMMON_ROOT + dbName + "/" + tableName + ".trd"; // 数据文件路径
 
     cout << "调试: 准备删除表 '" << tableName << "'" << endl;
     cout << "  元数据目录: " << tableMetaPath << endl;

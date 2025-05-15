@@ -50,7 +50,6 @@ public:
     bool insert_into_table(const std::string& dbName, const std::string& tableName, const std::vector<std::string>& values);
     bool update_table_row(const SQLCommand& cmd);
     bool delete_table_row(const SQLCommand& cmd);
-    std::string grant_privilege_sql(const std::string& username, const std::string& privilegeType);
     FileManager& getFileManager() { return fileManager; }
 
     // --- 新增 SELECT 操作方法 ---

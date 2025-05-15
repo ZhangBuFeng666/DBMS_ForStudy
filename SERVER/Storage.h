@@ -56,10 +56,7 @@ private:
         return file.good() ? 1 : 0; // 成功返回 1，失败返回 0
     }
 
-    // 创建（空的）二进制文件的函数 (当前未使用，保留)
-    // 0:失败, 1:成功, -1:文件已存在
-    int write_to_file(const std::string& path);
-
+    
 public:
 
     // 构造函数 (可以用来进行一些初始化检查)

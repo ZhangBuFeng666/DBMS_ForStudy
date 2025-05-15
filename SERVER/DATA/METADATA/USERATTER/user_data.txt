@@ -1,4 +1,6 @@
 alice 123 admin
-XX 000 base
 yy 000 base
 ww 000 base
+constraintTestDB 000 admin
+testDB 000 admin
+myTestDB 000 admin

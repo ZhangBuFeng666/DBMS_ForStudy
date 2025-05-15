@@ -591,7 +591,7 @@ bool SQLInterface::alter_table(const SQLCommand& cmd) {
 
     string dbMetaDir = METADATA_DB_ROOT + cmd.dbName + "/";
     string tableMetaDir = dbMetaDir + cmd.tableName + "/";
-    string tableDataPath = COMMONDATA_ROOT + cmd.tableName + ".trd";
+    string tableDataPath = COMMONDATA_ROOT + cmd.dbName + "/" +cmd.tableName + ".trd";
     string tdfPath = tableMetaDir + cmd.tableName + ".tdf";
     string ticPath = tableMetaDir + cmd.tableName + ".tic";
     string tidPath = tableMetaDir + cmd.tableName + ".tid"; // 虽然不修改，检查主键时可能需要
@@ -602,7 +602,7 @@ bool SQLInterface::alter_table(const SQLCommand& cmd) {
     case SQLCommand::RENAME_TABLE: { /* ... 实现 (保持不变) ... */
         string newTableName = cmd.newTableName;
         string newTableMetaDir = dbMetaDir + newTableName + "/";
-        string newTableDataPath = COMMONDATA_ROOT + newTableName + ".trd";
+        string newTableDataPath = COMMONDATA_ROOT +cmd.dbName + "/" + newTableName + ".trd";
         if (fs::exists(newTableMetaDir) || fs::exists(newTableDataPath)) { cerr << "错误: 无法重命名表，目标表名 '" << newTableName << "' 已存在。" << endl; return false; }
         error_code ec_trd, ec_dir, ec_f;
         if (fs::exists(tableDataPath)) {
@@ -634,7 +634,7 @@ bool SQLInterface::alter_table(const SQLCommand& cmd) {
         if (!tdfFile.is_open() || !ticFile.is_open()) { cerr << "错误: 无法打开 .tdf 或 .tic 文件进行追加。" << endl; if (tdfFile.is_open()) tdfFile.close(); if (ticFile.is_open()) ticFile.close(); return false; }
         tdfFile << colName << '\n'; ticFile << colType << '\n'; tdfFile.close(); ticFile.close();
         if (!tdfFile.good() || !ticFile.good()) { cerr << "错误: 写入 .tdf 或 .tic 文件时发生错误。" << endl; return false; } // 回滚复杂
-        if (fs::exists(tableDataPath) && tableHasData(cmd.tableName, COMMONDATA_ROOT)) {
+        if (fs::exists(tableDataPath) && tableHasData(cmd.tableName, COMMONDATA_ROOT + cmd.dbName + "/")) {
             string tempTrdPath = tableDataPath + ".tmp"; vector<string> lines = readLinesFromFile(tableDataPath); vector<string> newLines; newLines.reserve(lines.size());
             string defaultValueStr;
             if (colType == "INT") defaultValueStr = "0"; else if (colType == "BOOL") defaultValueStr = "false"; else if (colType == "DATE") defaultValueStr = "'1970-01-01'"; else if (colType.rfind("CHAR", 0) == 0) defaultValueStr = "''"; else defaultValueStr = "''";
@@ -737,7 +737,7 @@ bool SQLInterface::alter_table(const SQLCommand& cmd) {
 
 
         // 4. 修改数据文件 (.trd) (这部分逻辑保持不变，从列中移除数据)
-        if (fs::exists(tableDataPath) && tableHasData(cmd.tableName, COMMONDATA_ROOT)) {
+        if (fs::exists(tableDataPath) && tableHasData(cmd.tableName, COMMONDATA_ROOT + cmd.dbName + "/")) {
             std::string tempTrdPath = tableDataPath + ".tmp";
             std::vector<std::string> lines_trd = readLinesFromFile(tableDataPath);
             std::vector<std::string> newLines_trd;
@@ -797,7 +797,7 @@ bool SQLInterface::alter_table(const SQLCommand& cmd) {
         vector<string> ticLines = readLinesFromFile(ticPath);
         if (colIndex >= ticLines.size()) { cerr << "错误: 列索引超出 .tic 文件范围。" << endl; return false; }
         string oldType = ticLines[colIndex];
-        if (tableHasData(cmd.tableName, COMMONDATA_ROOT)) {
+        if (tableHasData(cmd.tableName, COMMONDATA_ROOT + cmd.dbName + "/")) {
             int oldLen = -1, newLen = -1; bool oldIsChar = parseCharLength(oldType, oldLen); bool newIsChar = parseCharLength(newType, newLen);
             if (!(oldIsChar && newIsChar && newLen > oldLen)) {
                 cerr << "错误: 无法修改列 '" << colToModify << "' 的类型从 '" << oldType << "' 到 '" << newType << "'，因为表中有数据。" << "在非空表上，只允许增加 CHAR 类型的长度。" << endl; return false;
@@ -830,7 +830,7 @@ bool SQLInterface::alter_table(const SQLCommand& cmd) {
 
 // 修改 SQLInterface::insert_into_table 函数
 bool SQLInterface::insert_into_table(const std::string& dbName, const std::string& tableName, const std::vector<std::string>& values) {
-    std::string dataPath = COMMONDATA_ROOT + tableName + ".trd";
+    std::string dataPath = COMMONDATA_ROOT + dbName+"/"+ tableName + ".trd";
     std::string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
     std::string ticPath = metaDir + tableName + ".tic"; // 类型文件
     std::string tdfPath = metaDir + tableName + ".tdf"; // 列名文件
@@ -888,7 +888,7 @@ bool SQLInterface::insert_into_table(const std::string& dbName, const std::strin
     //    由于没有强制索引，我们需要读取整个数据文件进行检查。
     //    如果表很大，这将非常低效。
     std::vector<std::vector<std::string>> existing_data_rows;
-    if (fs::exists(dataPath) && tableHasData(tableName, COMMONDATA_ROOT)) { // tableHasData 检查文件大小 > 0
+    if (fs::exists(dataPath) && tableHasData(tableName, COMMONDATA_ROOT + dbName + "/")) { // tableHasData 检查文件大小 > 0
         std::vector<std::string> data_lines = readLinesFromFile(dataPath);
         for (const std::string& line : data_lines) {
             if (line.empty()) continue;
@@ -943,75 +943,6 @@ bool SQLInterface::insert_into_table(const std::string& dbName, const std::strin
     return success;
 }
 
-//// --- 数据操作 (DML) (保持不变) ---
-//bool SQLInterface::insert_into_table(const string& dbName, const string& tableName, const vector<string>& values) {
-//    string dataPath = COMMONDATA_ROOT + tableName + ".trd";
-//    string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
-//    string ticPath = metaDir + tableName + ".tic";
-//
-//    if (!fs::exists(ticPath)) {
-//        cerr << "错误: 无法找到表 '" << tableName << "' 的类型定义文件 (.tic)。" << endl;
-//        return false;
-//    }
-//
-//    vector<string> fieldTypes = parseFieldTypes(dbName, tableName);
-//    if (fieldTypes.empty()) {
-//        cerr << "错误: 未能从 .tic 文件加载字段类型。" << endl;
-//        return false;
-//    }
-//
-//    if (values.size() != fieldTypes.size()) {
-//        cerr << "错误: 插入的值数量 (" << values.size() << ") 与表定义的字段数量 (" << fieldTypes.size() << ") 不匹配。" << endl;
-//        return false;
-//    }
-//
-//    // 处理并验证值
-//    vector<string> processedValues;
-//    for (size_t i = 0; i < values.size(); ++i) {
-//        string trimmedVal = trim(values[i]);
-//        bool isNull = (trimmedVal.empty() || iequals(trimmedVal, "NULL"));
-//
-//        if (!isNull && !validateValueType(fieldTypes[i], values[i])) {
-//            cerr << "错误: 第 " << (i + 1) << " 个值 '" << values[i]
-//                << "' 的类型不符合字段要求的类型 '" << fieldTypes[i] << "'。" << endl;
-//            return false;
-//        }
-//        processedValues.push_back(isNull ? "" : values[i]);
-//    }
-//
-//    string rowData = joinToCsvRow(processedValues);
-//    ofstream dataFile(dataPath, ios::app);
-//    if (!dataFile.is_open()) {
-//        cerr << "错误: 无法打开数据文件进行追加: " << dataPath << endl;
-//        return false;
-//    }
-//
-//    dataFile << rowData << "\n";
-//    bool success = dataFile.good();
-//    dataFile.close();
-//
-//    if (!success) {
-//        cerr << "错误: 写入数据到文件 " << dataPath << " 失败。" << endl;
-//    }
-//    else {
-//        cout << "插入成功: " << rowData << endl;
-//    }
-//    return success;
-//}
-
-
-// 在 SQLInterface.cpp 中
-
-// (确保 load_column_constraints_from_tid, LoadedColumnConstraints, 
-//  readLinesFromFile, parseCsvRow, joinToCsvRow, findColumnIndex, iequals, trim, tableHasData 等辅助函数已存在)
-
-// 在 SQLInterface.cpp 中
-
-// (确保所有相关的辅助函数如 load_column_constraints_from_tid, findColumnIndex,
-//  readLinesFromFile, parseCsvRow, joinToCsvRow, trim, iequals, validateValueType,
-//  tableHasData, LoadedColumnConstraints 结构体等已存在且功能正确)
-// 并且 METADATA_DB_ROOT, COMMONDATA_ROOT, fs 命名空间等已正确设置
-
 // --- MODIFIED update_table_row ---
 bool SQLInterface::update_table_row(const SQLCommand& cmd) { // Changed signature
     if (cmd.type != SQLCommand::UPDATE) {
@@ -1023,7 +954,7 @@ bool SQLInterface::update_table_row(const SQLCommand& cmd) { // Changed signatur
     const std::string& tableName = cmd.tableName; // Or cmd.fromTable if that's your convention
     const auto& setClauses = cmd.setClauses;
 
-    std::string dataPath = COMMONDATA_ROOT + tableName + ".trd";
+    std::string dataPath = COMMONDATA_ROOT + dbName +"/" + tableName + ".trd";
     std::string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
     std::string tdfPath = metaDir + tableName + ".tdf";
     std::string ticPath = metaDir + tableName + ".tic";
@@ -1471,7 +1402,7 @@ bool SQLInterface::delete_table_row(const SQLCommand& cmd) { // Changed signatur
     const std::string& dbName = cmd.dbName;
     const std::string& tableName = cmd.tableName; // Or cmd.fromTable
 
-    std::string dataPath = COMMONDATA_ROOT + tableName + ".trd";
+    std::string dataPath = COMMONDATA_ROOT + dbName +"/" + tableName + ".trd";
     std::string metaDir = METADATA_DB_ROOT + dbName + "/" + tableName + "/";
     std::string tdfPath = metaDir + tableName + ".tdf";
     std::string ticPath = metaDir + tableName + ".tic"; // Need types for evaluate_single_condition
@@ -1575,10 +1506,6 @@ bool SQLInterface::delete_table_row(const SQLCommand& cmd) { // Changed signatur
     std::cout << "删除成功。共有 " << deletedRows << " 行受到影响。" << std::endl;
     return true;
 }
-// --- 权限管理 (示例) (保持不变) ---
-string SQLInterface::grant_privilege_sql(const string& username, const string& privilegeType) {
-    return "GRANT " + privilegeType + " TO " + username + ";";
-}
 
 // --- 私有辅助函数实现 (保持不变) ---
 bool SQLInterface::validateFieldType(const string& typeStr) { /* ... 实现 ... */
@@ -1675,12 +1602,12 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         std::string metaDir1 = METADATA_DB_ROOT + cmd.dbName + "/" + table1Name + "/";
         std::string tdfPath1 = metaDir1 + table1Name + ".tdf";
         std::string ticPath1 = metaDir1 + table1Name + ".tic"; // 尽管未使用，但通常会检查
-        std::string dataPath1 = COMMONDATA_ROOT + table1Name + ".trd";
+        std::string dataPath1 = COMMONDATA_ROOT + cmd.dbName + "/" + table1Name + ".trd";
 
         std::string metaDir2 = METADATA_DB_ROOT + cmd.dbName + "/" + table2Name + "/";
         std::string tdfPath2 = metaDir2 + table2Name + ".tdf";
         std::string ticPath2 = metaDir2 + table2Name + ".tic"; // 尽管未使用，但通常会检查
-        std::string dataPath2 = COMMONDATA_ROOT + table2Name + ".trd";
+        std::string dataPath2 = COMMONDATA_ROOT + cmd.dbName + "/" + table2Name + ".trd";
 
         if (!fs::exists(tdfPath1) /*|| !fs::exists(ticPath1)*/ || !fs::exists(dataPath1)) {
             result.success = false;
@@ -2162,7 +2089,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
         std::string metaDir = METADATA_DB_ROOT + cmd.dbName + "/" + cmd.fromTable + "/";
         std::string tdfPath = metaDir + cmd.fromTable + ".tdf";
         std::string ticPath = metaDir + cmd.fromTable + ".tic";
-        std::string dataPath = COMMONDATA_ROOT + cmd.fromTable + ".trd";
+        std::string dataPath = COMMONDATA_ROOT +cmd.dbName + "/" + cmd.fromTable + ".trd";
 
         if (!fs::exists(tdfPath) || !fs::exists(ticPath)) {
             result.success = false;
@@ -2415,7 +2342,7 @@ SelectResult SQLInterface::select_from_table(const SQLCommand& cmd) {
             // ... (这里的全表扫描逻辑和你之前的一样，使用 evaluate_single_condition) ...
             // ... (它会填充 filteredDataRows) ...
             std::cout << "调试: 执行全表扫描和WHERE过滤。" << std::endl;
-            std::string dataPath = COMMONDATA_ROOT + cmd.fromTable + ".trd";
+            std::string dataPath = COMMONDATA_ROOT +cmd.dbName+"/" + cmd.fromTable + ".trd";
             bool dataFileExists = fs::exists(dataPath);
 
             if (!dataFileExists) {
